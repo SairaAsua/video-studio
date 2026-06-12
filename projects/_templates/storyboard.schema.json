@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Storyboard",
+  "description": "One record per scene with versioned image stacks.",
+  "type": "object",
+  "properties": {
+    "project": { "type": "string" },
+    "scenes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "time_in": { "type": "string" },
+          "time_out": { "type": "string" },
+          "text": { "type": "string", "description": "Narration for this scene" },
+          "visual_direction": { "type": "string" },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": { "type": "string" },
+                "seed": { "type": "integer" },
+                "approved": { "type": "boolean", "default": false }
+              }
+            }
+          },
+          "current_image": { "type": "integer", "default": 0 },
+          "locked": { "type": "boolean", "default": false }
+        },
+        "required": ["id", "time_in", "time_out", "text", "visual_direction"]
+      }
+    }
+  }
+}

@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>Video Studio — Dashboard</title>
+<style>
+  :root {
+    --bg: #0b0f14;
+    --surface: #131820;
+    --border: #1e2a38;
+    --text: #e0e4ea;
+    --text-muted: #6a7a8e;
+    --accent: #c9a03a;
+    --accent-dim: #8a6d28;
+    --green: #4fc3a8;
+    --red: #e0556a;
+    --radius: 8px;
+    --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  header {
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  header h1 {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
+  header .project-selector {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  header select {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px 12px;
+    font-family: var(--font);
+    font-size: 13px;
+    outline: none;
+  }
+  header select:focus { border-color: var(--accent); }
+  header .status {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  header .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+  }
+
+  /* ── Main layout ── */
+  main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── Pane: Script Editor ── */
+  .pane-script {
+    width: 40%;
+    min-width: 360px;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+  }
+  .pane-header {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .pane-header .btn {
+    font-size: 11px;
+    padding: 4px 10px;
+  }
+  .script-editor {
+    flex: 1;
+    padding: 20px;
+    background: transparent;
+    color: var(--text);
+    border: none;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.7;
+    resize: none;
+    outline: none;
+    tab-size: 2;
+  }
+  .script-editor:focus {
+    background: rgba(201, 160, 58, 0.03);
+  }
+
+  /* ── Pane: Storyboard ── */
+  .pane-storyboard {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+  }
+  .storyboard-grid {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    align-content: start;
+  }
+  .scene-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: visible;
+    display: flex;
+    flex-direction: column;
+    transition: border-color 0.2s;
+  }
+  .scene-card:hover { border-color: var(--accent-dim); }
+  .scene-card.approved { border-color: var(--green); }
+  .scene-card.locked { border-color: var(--accent-dim); }
+
+  .scene-image {
+    width: 100%;
+    height: 160px;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 12px;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .scene-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .scene-image .placeholder {
+    text-align: center;
+    padding: 20px;
+    line-height: 1.5;
+  }
+  .scene-image .placeholder.generating {
+    color: var(--accent);
+  }
+  .spinner {
+    display: inline-block;
+    width: 16px; height: 16px;
+    border: 2px solid rgba(201,160,58,0.3);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+    margin-right: 4px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .scene-info {
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+  }
+  .scene-time {
+    font-size: 11px;
+    color: var(--accent);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .scene-text {
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text);
+    flex: 1;
+  }
+  .scene-text textarea {
+    width: 100%;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px;
+    font-family: var(--font);
+    font-size: 12px;
+    line-height: 1.6;
+    resize: vertical;
+    outline: none;
+  }
+  .scene-text textarea:focus { border-color: var(--accent); }
+
+  .scene-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .btn {
+    background: #1e3040;
+    color: #c0d0e0;
+    border: 1px solid #2d4050;
+    border-radius: 4px;
+    padding: 6px 14px;
+    font-family: var(--font);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .btn:hover { background: #2d4050; border-color: var(--accent); color: #fff; }
+  .btn.primary { background: var(--accent); color: #0b0f14; font-weight: 600; border-color: var(--accent); }
+  .btn.primary:hover { background: #d4ae4a; }
+  .btn.approve { background: #2a5a4a; color: #b0f0d0; border-color: var(--green); }
+  .btn.approve:hover { background: var(--green); color: #0b0f14; }
+  .btn.danger { background: transparent; color: var(--red); border: 1px solid var(--red); }
+  .btn.danger:hover { background: rgba(224,85,106,0.15); }
+  .btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  .badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+  .badge.approved { background: rgba(79,195,168,0.15); color: var(--green); }
+  .badge.draft { background: rgba(106,122,142,0.15); color: var(--text-muted); }
+  .badge.locked { background: rgba(201,160,58,0.15); color: var(--accent); }
+  .badge.version {
+    position: absolute; top: 6px; right: 6px;
+    background: rgba(0,0,0,0.7); color: #ccc;
+    font-size: 9px; z-index: 2;
+  }
+
+  .img-nav {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    background: rgba(0,0,0,0.5); color: #fff; border: none;
+    font-size: 20px; padding: 4px 8px; cursor: pointer;
+    z-index: 2; line-height: 1; border-radius: 3px;
+  }
+  .img-nav:hover { background: rgba(0,0,0,0.8); color: var(--accent); }
+  .img-nav.prev { left: 4px; }
+  .img-nav.next { right: 4px; }
+
+  /* ── Footer ── */
+  footer {
+    padding: 10px 24px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--surface);
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  footer .render-status { display: flex; align-items: center; gap: 8px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Video Studio</h1>
+  <div class="project-selector">
+    <select id="project-select" onchange="loadProject(this.value)">
+      <option value="">— select project —</option>
+    </select>
+    <div class="status">
+      <span class="status-dot" id="status-dot"></span>
+      <span id="status-text">ready</span>
+    </div>
+    <span id="debug-info" style="font-size:10px;color:var(--accent);margin-left:8px;"></span>
+  </div>
+</header>
+
+<main>
+  <!-- Script Pane -->
+  <section class="pane-script">
+    <div class="pane-header">
+      <span>📄 SCRIPT.md</span>
+      <button class="btn" onclick="saveScript()" id="save-script-btn" disabled>Save</button>
+    </div>
+    <textarea class="script-editor" id="script-editor"
+      placeholder="Write narration script here...&#10;&#10;## Scene 1 — Title (0:00–0:45)&#10;Narration text...&#10;&#10;## Scene 2 — Title (0:45–1:30)&#10;Narration text..."
+      oninput="onScriptChanged()"></textarea>
+  </section>
+
+  <!-- Storyboard Pane -->
+  <section class="pane-storyboard">
+    <div class="pane-header">
+      <span>🎬 STORYBOARD</span>
+      <span style="font-size:11px;color:var(--accent)" id="sb-count">0 scenes</span>
+    </div>
+    <div class="storyboard-grid" id="storyboard-grid">
+      <div class="scene-card" style="align-items:center;justify-content:center;padding:40px;color:var(--text-muted);font-size:13px;">
+        Select a project to load storyboard
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span id="project-path">No project loaded</span>
+  <div class="render-status">
+    <span id="render-msg"></span>
+    <button class="btn primary" onclick="triggerRender()" id="render-btn" disabled>Render</button>
+  </div>
+</footer>
+
+<script>
+const API = '';
+let currentSlug = '';
+let originalScript = '';
+let saveTimeout;
+
+// ── SSE ──
+const es = new EventSource(`${API}/api/project/watch`);
+es.onmessage = (e) => {
+  const data = JSON.parse(e.data);
+  if (data.event === 'connected') {
+    document.getElementById('status-dot').style.background = 'var(--green)';
+    document.getElementById('status-text').textContent = 'connected';
+  } else if (data.event === 'ping') {
+    // no-op
+  } else if (data.event === 'gen-requested') {
+    // Agent will handle — keep spinner, do NOT reload
+    document.getElementById('render-msg').textContent = `Generating scene ${data.event.split(':')[1]}...`;
+  } else {
+    // refresh, scene-approved, storyboard-updated, script-updated → reload
+    loadProject(currentSlug || data.slug);
+  }
+};
+
+// ── Project list ──
+async function listProjects() {
+  const resp = await fetch(`${API}/api/projects`);
+  const projects = await resp.json();
+  const sel = document.getElementById('project-select');
+  projects.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p; opt.textContent = p;
+    sel.appendChild(opt);
+  });
+}
+
+// ── Load ──
+async function loadProject(slug) {
+  if (!slug) return;
+  currentSlug = slug;
+  const debug = document.getElementById('debug-info');
+  document.getElementById('project-path').textContent = `projects/${slug}/`;
+
+  try {
+    const resp = await fetch(`${API}/api/project/${slug}`);
+    const data = await resp.json();
+    debug.textContent = `v2 · ${data.storyboard?.scenes?.length||0} scenes`;
+
+    // Script — show whatever artifact is available
+    const editor = document.getElementById('script-editor');
+    const scriptContent = data.script || data.SPINE || data.brief || '';
+    editor.value = scriptContent;
+    originalScript = scriptContent;
+    document.getElementById('save-script-btn').disabled = true;
+
+    // Storyboard
+    renderStoryboard(data.storyboard, data.scene_images || [], slug);
+
+    // Render button
+    const allApproved = (data.storyboard?.scenes || []).every(s => (s.images||[]).some(v => v.approved));
+    document.getElementById('render-btn').disabled = !allApproved;
+    document.getElementById('render-msg').textContent = allApproved ? 'All scenes approved ✓' : '';
+  } catch(e) {
+    debug.textContent = 'ERROR: ' + e.message;
+    console.error(e);
+  }
+}
+
+// ── Storyboard render ──
+function renderStoryboard(sb, images, slug) {
+  const grid = document.getElementById('storyboard-grid');
+  const scenes = sb?.scenes || [];
+  document.getElementById('sb-count').textContent = `${scenes.length} scenes`;
+
+  if (!scenes.length) {
+    grid.innerHTML = '<div class="scene-card" style="align-items:center;justify-content:center;padding:40px;color:var(--text-muted);font-size:13px;">No storyboard yet</div>';
+    return;
+  }
+
+  grid.innerHTML = scenes.map(s => {
+    const versions = s.images || [];
+    const currentIdx = s.current_image || 0;
+    const currentImg = versions[currentIdx];
+    const totalV = versions.length;
+    const hasApproved = versions.some(v => v.approved);
+
+    const imgHtml = currentImg
+      ? `<img src="/projects/${slug}/${currentImg.path}" alt="Scene ${s.id} v${currentIdx+1}">`
+      : (s._generating
+        ? `<div class="placeholder generating">Generating...<br><small>scene ${s.id}</small></div>`
+        : `<div class="placeholder">Scene ${s.id}<br><small>No image generated</small></div>`);
+
+    const navArrows = totalV > 1 ? `
+      <button class="img-nav prev" onclick="navigateImage(${s.id}, -1)" title="Previous version">‹</button>
+      <button class="img-nav next" onclick="navigateImage(${s.id}, 1)" title="Next version">›</button>
+    ` : '';
+
+    const versionBadge = totalV > 0
+      ? `<span class="badge version">v${currentIdx+1}/${totalV}</span>`
+      : '';
+
+    const statusBadge = hasApproved ? 'approved' : (s.locked ? 'locked' : 'draft');
+    const statusText = hasApproved ? '✓ Approved' : (s.locked ? '🔒 Locked' : 'Draft');
+
+    return `
+    <div class="scene-card ${statusBadge}">
+      <div class="scene-image">
+        ${imgHtml}
+        ${navArrows}
+        ${versionBadge}
+      </div>
+      <div class="scene-info">
+        <div class="scene-time">Scene ${s.id} · ${s.time_in}–${s.time_out}</div>
+        <div class="scene-text">
+          <textarea onchange="updateSceneText(${s.id}, this.value)"
+            placeholder="Scene narration...">${escHtml(s.text || '')}</textarea>
+        </div>
+        <div class="scene-actions">
+          <span class="badge ${statusBadge}">${statusText}</span>
+          <button class="btn" onclick="generateVersion(${s.id})" ${s.locked ? 'disabled' : ''}>🖼 Gen</button>
+          <button class="btn" onclick="lockScene(${s.id}, ${!s.locked})">${s.locked ? 'Unlock' : 'Lock'}</button>
+          <button class="btn approve" onclick="approveCurrent(${s.id})" ${hasApproved ? 'disabled' : ''}>✓</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function navigateImage(sceneId, delta) {
+  const sbPath = `${API}/api/project/${currentSlug}/storyboard/${sceneId}/navigate`;
+  fetch(sbPath, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({delta})})
+    .then(() => loadProject(currentSlug));
+}
+
+async function generateVersion(id) {
+  const grid = document.getElementById('storyboard-grid');
+  const cards = grid.querySelectorAll('.scene-card');
+  // Find the right card — nth-child is 1-based, but we need to match by data or order
+  const card = Array.from(cards).find(c => {
+    const timeEl = c.querySelector('.scene-time');
+    return timeEl && timeEl.textContent.startsWith(`Scene ${id}`);
+  });
+  if (card) {
+    const imgDiv = card.querySelector('.scene-image');
+    imgDiv.innerHTML = `<div class="placeholder generating"><span class="spinner"></span> Generating...<br><small>scene ${id}</small></div>`;
+  }
+  document.getElementById('render-msg').textContent = `Requesting generation for scene ${id}...`;
+  const resp = await fetch(`${API}/api/project/${currentSlug}/storyboard/${id}/image`, {method: 'POST'});
+  const data = await resp.json();
+  if (!resp.ok) {
+    document.getElementById('render-msg').textContent = data.detail || 'Generation request failed';
+  }
+  // Do NOT reload — SSE will trigger refresh when agent saves the image
+}
+
+async function approveCurrent(id) {
+  await fetch(`${API}/api/project/${currentSlug}/storyboard/${id}/approve`, {method: 'POST'});
+  loadProject(currentSlug);
+}
+
+async function lockScene(id, locked) {
+  await fetch(`${API}/api/project/${currentSlug}/storyboard/${id}`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({locked}),
+  });
+  loadProject(currentSlug);
+}
+
+// ── Actions ──
+function escHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+function onScriptChanged() {
+  const editor = document.getElementById('script-editor');
+  document.getElementById('save-script-btn').disabled = editor.value === originalScript;
+}
+
+async function saveScript() {
+  const editor = document.getElementById('script-editor');
+  const resp = await fetch(`${API}/api/project/${currentSlug}/script`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({content: editor.value}),
+  });
+  if (resp.ok) {
+    originalScript = editor.value;
+    document.getElementById('save-script-btn').disabled = true;
+  }
+}
+
+async function updateSceneText(id, text) {
+  await fetch(`${API}/api/project/${currentSlug}/storyboard/${id}`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text}),
+  });
+}
+
+async function lockScene(id, locked) {
+  await fetch(`${API}/api/project/${currentSlug}/storyboard/${id}`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({locked}),
+  });
+  loadProject(currentSlug);
+}
+
+async function approveScene(id) {
+  await fetch(`${API}/api/project/${currentSlug}/storyboard/${id}`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({approved: true}),
+  });
+  loadProject(currentSlug);
+}
+
+async function regenerateImage(id) {
+  document.getElementById('render-msg').textContent = `Generating scene ${id}...`;
+  await fetch(`${API}/api/project/${currentSlug}/storyboard/${id}/image`, {method: 'POST'});
+  loadProject(currentSlug);
+}
+
+async function triggerRender() {
+  document.getElementById('render-msg').textContent = 'Rendering...';
+  const resp = await fetch(`${API}/api/project/${currentSlug}/render`, {method: 'POST'});
+  const data = await resp.json();
+  if (resp.ok) {
+    document.getElementById('render-msg').textContent = data.message;
+  } else {
+    document.getElementById('render-msg').textContent = data.detail || 'Render failed';
+  }
+}
+
+// ── Init ──
+listProjects();
+</script>
+</body>
+</html>
