@@ -2,7 +2,7 @@
 """
 assemble.py — ffmpeg video assembly for the asset_timeline pipeline.
 
-Multi-layer per-scene composition + concat.
+Multi-layer per-scene composition + concat with optional cross-scene transitions.
 
 Pipeline:
   - Per scene: black 1920x1080 base + multi-layer composition from
@@ -12,13 +12,23 @@ Pipeline:
   - Per-asset captions (offset by asset time_in → build_caption_chain)
   - Bottom-up overlay by layer asc (blend_mode support with fallback)
   - Audio unchanged (per-scene narration + anullsrc fallback)
-  - Per-scene mp4 (re-encoded) → concat -c copy for final export
+  - Per-scene mp4 (re-encoded) → xfade transitions + acrossfade audio for final export
 
 Note: engine currently uses sequential `duration_secs` per-asset for
 time windows; absolute `time_in`/`time_out` overlay support is a known gap.
 
 Drops all references to: images[], motion_preset, approved, motion_override.
 The data model field for motion is `motion` (per-asset).
+
+Transition support (cross-scene):
+  Storyboard JSON may include top-level field:
+      "transition": {"type": "fade|wipe_left|wipe_right|dissolve|none", "duration_secs": 0.5}
+  Default (if absent or null): {"type": "fade", "duration_secs": 0.5}
+  "none" (or 1 scene) falls back to stream-copy concat demuxer (original fast path, no re-encode).
+  Supported xfade names are mapped: "fade"→"fade", "wipe_left"→"wipeleft",
+  "wipe_right"→"wiperight", "dissolve"→"dissolve".
+  Duration is probed per input scene via ffprobe; total output duration is
+  sum(durs) - (N-1)*transition_dur to account for overlaps.
 
 Usage:
     python lib/assemble.py <project-slug> [--quality draft|high] [--debug-filter]
@@ -242,36 +252,153 @@ def render_scene(scene: dict, paths: dict, quality: str = "draft",
     return output_path
 
 
-def concat_scenes(scene_paths: list[Path], output_path: Path, quality: str = "draft"):
+def _probe_duration(path: Path) -> float:
+    """Probe media duration in seconds using ffprobe (format duration)."""
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "csv=p=0",
+        str(path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    if result.returncode != 0:
+        print(f"--- ffprobe STDERR for {path} ---", file=sys.stderr)
+        print(result.stderr[-1500:], file=sys.stderr)
+        raise RuntimeError(f"ffprobe failed for {path}")
+    try:
+        return float(result.stdout.strip())
+    except Exception:
+        raise RuntimeError(f"Could not parse duration for {path}: {result.stdout.strip()!r}")
+
+
+def concat_scenes(scene_paths: list[Path], output_path: Path,
+                  transition: dict | None = None, quality: str = "draft") -> Path:
     """
-    Concatenate rendered scene clips into the final video using
-    -c copy (stream copy, no re-encode). Trivially robust.
+    Concatenate rendered scene clips.
+
+    If transition is None, type=="none", or only 1 scene: use legacy stream-copy
+    concat demuxer (fast, no re-encode, writes concat.txt sidecar).
+
+    Otherwise: build xfade + acrossfade filter_complex pipeline (re-encodes).
+    Probed durations are used to compute exact xfade offsets and total output -t.
+    Prints a one-line progress message before encoding.
     """
     if not scene_paths:
         raise RuntimeError("No scene paths to concatenate")
 
-    concat_file = output_path.parent / "concat.txt"
-    lines = []
+    # Normalize transition spec (caller may pass None or omit)
+    if transition is None:
+        transition = {"type": "none", "duration_secs": 0.5}
+    t_type = (transition.get("type") or "fade") if isinstance(transition, dict) else "none"
+    t_dur = float(transition.get("duration_secs", 0.5)) if isinstance(transition, dict) else 0.5
+
+    N = len(scene_paths)
+    if t_type == "none" or N < 2:
+        # Fallback: original stream-copy concat (preserves exact behavior)
+        concat_file = output_path.parent / "concat.txt"
+        lines = []
+        for p in scene_paths:
+            # ffmpeg concat demuxer requires absolute paths or paths relative
+            # to the concat file's location. Use absolute.
+            lines.append(f"file '{p.resolve()}'")
+        concat_file.write_text("\n".join(lines) + "\n")
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", str(concat_file),
+            "-c", "copy",
+            "-movflags", "+faststart",  # web-friendly MP4 with metadata at start
+            str(output_path),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if result.returncode != 0:
+            print(f"--- ffmpeg concat STDERR ---", file=sys.stderr)
+            print(result.stderr[-1500:], file=sys.stderr)
+            raise RuntimeError(f"ffmpeg concat failed")
+        return output_path
+
+    # --- xfade / acrossfade path (N >= 2 and transition type != none) ---
+    xfade_map = {
+        "fade": "fade",
+        "wipe_left": "wipeleft",
+        "wipe_right": "wiperight",
+        "dissolve": "dissolve",
+    }
+    xname = xfade_map.get(t_type, "fade")
+
+    # Probe all input durations
+    durs = [_probe_duration(p) for p in scene_paths]
+    total_dur = sum(durs) - t_dur * (N - 1)
+    if total_dur <= 0:
+        # Degenerate (over-long transition); fall back to sum without overlap trim
+        total_dur = sum(durs)
+
+    print(f"Concatenating {N} scenes with {t_type} {t_dur}s transitions (total: {total_dur:.1f}s)…")
+
+    # Video xfade chain:
+    # [0:v][1:v]xfade=...[x1]
+    # [x1][2:v]xfade=...[x2]
+    # ... last -> [vout]
+    v_parts: list[str] = []
+    prev = "[0:v]"
+    for i in range(N - 1):
+        nxt = f"[{i+1}:v]"
+        out = "[vout]" if i == N - 2 else f"[x{i+1}]"
+        offset = sum(durs[:i+1]) - (i + 1) * t_dur
+        v_parts.append(
+            f"{prev}{nxt}xfade=transition={xname}:duration={t_dur:.3f}:offset={offset:.3f}{out}"
+        )
+        prev = out
+    video_chain = ";".join(v_parts)
+
+    # Audio acrossfade chain (no explicit offset; acrossfade aligns to input lengths):
+    # [0:a][1:a]acrossfade=d=...[a1]
+    # [a1][2:a]acrossfade=...[a2]
+    # ... -> [aout]
+    a_parts: list[str] = []
+    prev = "[0:a]"
+    for i in range(N - 1):
+        nxt = f"[{i+1}:a]"
+        out = "[aout]" if i == N - 2 else f"[a{i+1}]"
+        a_parts.append(f"{prev}{nxt}acrossfade=d={t_dur:.3f}{out}")
+        prev = out
+    audio_chain = ";".join(a_parts)
+
+    filter_complex = f"{video_chain};{audio_chain}"
+
+    # Build input list (-i for every scene mp4)
+    cmd_inputs: list[str] = []
     for p in scene_paths:
-        # ffmpeg concat demuxer requires absolute paths or paths relative
-        # to the concat file's location. Use absolute.
-        lines.append(f"file '{p.resolve()}'")
-    concat_file.write_text("\n".join(lines) + "\n")
+        cmd_inputs += ["-i", str(p)]
+
+    preset = "fast" if quality == "draft" else "slow"
+    crf = "28" if quality == "draft" else "18"
 
     cmd = [
         "ffmpeg", "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", str(concat_file),
-        "-c", "copy",
-        "-movflags", "+faststart",  # web-friendly MP4 with metadata at start
+        *cmd_inputs,
+        "-filter_complex", filter_complex,
+        "-map", "[vout]", "-map", "[aout]",
+        "-c:v", "libx264", "-preset", preset,
+        "-crf", crf, "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "192k",
+        "-movflags", "+faststart",
+        "-t", f"{total_dur:.3f}",
         str(output_path),
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+
+    # Trivial support for quality="debug" (print only; caller normally skips via debug_filter)
+    if quality == "debug":
+        print(" ".join(cmd))
+        return output_path
+
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
     if result.returncode != 0:
-        print(f"--- ffmpeg concat STDERR ---", file=sys.stderr)
-        print(result.stderr[-1500:], file=sys.stderr)
-        raise RuntimeError(f"ffmpeg concat failed")
+        print(f"--- ffmpeg xfade concat STDERR ---", file=sys.stderr)
+        print(result.stderr[-2000:], file=sys.stderr)
+        raise RuntimeError(f"ffmpeg xfade concat failed")
     return output_path
 
 
@@ -300,6 +427,11 @@ def main():
     paths = get_paths(slug)
     sb = json.loads(paths["storyboard"].read_text())
     scenes = sb.get("scenes", [])
+
+    # Top-level transition (optional); default to fade 0.5s cross-scene xfade
+    transition = sb.get("transition")
+    if transition is None:
+        transition = {"type": "fade", "duration_secs": 0.5}
 
     if single_scene is not None:
         scene = next((s for s in scenes if s["id"] == single_scene), None)
@@ -339,7 +471,7 @@ def main():
     # Concat
     paths["exports"].mkdir(parents=True, exist_ok=True)
     final = paths["exports"] / f"{slug}-{quality}.mp4"
-    concat_scenes(rendered, final, quality)
+    concat_scenes(rendered, final, transition, quality)
     print(f"\nFinal: {final} ({final.stat().st_size // 1024} KB)")
 
 
