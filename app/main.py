@@ -9,15 +9,13 @@ Endpoints:
     GET  /                                  → dashboard HTML
     GET  /api/projects                      → list project slugs
     GET  /api/project/watch                 → SSE stream (all projects)
-    GET  /api/project/{slug}                → {script, storyboard, scene_images, ...}
+    GET  /api/project/{slug}                → {script, storyboard, scene_images}
     PUT  /api/project/{slug}/script         → write script.md
     PUT  /api/project/{slug}/storyboard/{scene_id}              → update scene fields
     POST /api/project/{slug}/storyboard/{scene_id}/image        → request generation (agent listens via SSE)
-    POST /api/project/{slug}/storyboard/{scene_id}/add-version  → agent registers a saved image
-    POST /api/project/{slug}/storyboard/{scene_id}/navigate     → step through image versions
-    POST /api/project/{slug}/storyboard/{scene_id}/approve      → approve current version + lock scene
-    POST /api/project/{slug}/storyboard/{scene_id}/unapprove    → unapprove any variant + unlock scene
-    POST /api/project/{slug}/render         → trigger render (gated on all approved)
+    GET  /api/project/{slug}/storyboard/{scene_id}/timeline     → get asset_timeline
+    PUT  /api/project/{slug}/storyboard/{scene_id}/timeline     → set/replace asset_timeline (emits timeline-updated SSE)
+    POST /api/project/{slug}/render         → trigger render (gated on still asset with path in timeline)
 
 Image paths in storyboard.json are always relative to the project directory
 (e.g. "scenes/scene-01-v1.png") and served at /projects/{slug}/{path}.
@@ -32,6 +30,7 @@ Usage:
 """
 
 import asyncio
+import hashlib
 import json
 import re
 import subprocess
@@ -177,11 +176,14 @@ async def get_project(slug: str):
     if sb_path.exists():
         result["storyboard"] = json.loads(sb_path.read_text())
 
-    # Generated images, project-relative — same convention as storyboard.json
+    # Generated images, project-relative — same convention as storyboard.json.
+    # The bin is filesystem-sourced: any supported image type counts.
     scenes_dir = proj / "scenes"
     if scenes_dir.exists():
+        image_exts = {".jpg", ".jpeg", ".png", ".webp"}
         result["scene_images"] = sorted(
-            str(p.relative_to(proj)) for p in scenes_dir.glob("*.png")
+            str(p.relative_to(proj)) for p in scenes_dir.glob("*.*")
+            if p.suffix.lower() in image_exts
         )
 
     return result
@@ -204,9 +206,7 @@ async def update_script(slug: str, body: ScriptUpdate):
 class SceneUpdate(BaseModel):
     text: str | None = None
     visual_direction: str | None = None
-    locked: bool | None = None
-    approved: bool | None = None
-    caption_phrases: list[dict] | None = None
+    asset_timeline: list[dict] | None = None
 
 
 @app.put("/api/project/{slug}/storyboard/{scene_id}")
@@ -226,8 +226,8 @@ async def update_scene(slug: str, scene_id: int, body: SceneUpdate):
 # ---------------------------------------------------------------------------
 # The dashboard endpoint below enqueues a "scene-needs-image" SSE event. The
 # agent (CompAII) listens on the SSE stream, calls `image_generate` with
-# xAI Grok Imagine, saves the resulting image, and registers it via
-# `/add-version`. FAL is not used — see MEMORY.md for rationale (2026-06-13).
+# xAI Grok Imagine, saves the resulting image, and records it in the scene's
+# asset_timeline. FAL is not used — see MEMORY.md for rationale (2026-06-13).
 #
 # Why request-only (not server-side FAL call):
 # - xAI Grok OAuth tokens live in Hermes' auth pool, accessible only to the
@@ -267,127 +267,62 @@ async def request_scene_image(slug: str, scene_id: int):
     """
     Enqueue a "generate image for this scene" request. The agent listens
     on the SSE stream, calls Grok Imagine via the image_generate tool,
-    saves the image to scenes/, and registers it via /add-version.
+    saves the image to scenes/, and records it in the scene's asset_timeline.
     """
     slug = slug.strip()
     project_dir(slug)  # validate
 
     sb_path, sb = load_storyboard(slug)
     scene = find_scene(sb, scene_id)
-    if scene.get("locked"):
-        raise HTTPException(400, f"Scene {scene_id} is locked")
-
     await sse_notify(slug, f"image-requested:{scene_id}")
     return {"ok": True, "scene": scene_id, "status": "requested", "provider": "xai-grok-imagine"}
 
 
-class VersionAdd(BaseModel):
-    path: str
-    seed: int = 42
-
-
-@app.post("/api/project/{slug}/storyboard/{scene_id}/add-version")
-async def add_image_version(slug: str, scene_id: int, body: VersionAdd):
-    """Agent calls this after saving a generated image to disk."""
-    sb_path, sb = load_storyboard(slug)
-    scene = find_scene(sb, scene_id)
-
-    versions = scene.setdefault("images", [])
-    versions.append({
-        "path": normalize_image_path(slug, body.path),
-        "seed": body.seed,
-        "approved": False,
-    })
-    scene["current_image"] = len(versions) - 1
-    save_storyboard(sb_path, sb)
-    await sse_notify(slug, f"image-added:{scene_id}")
-    return {"ok": True, "version": len(versions)}
-
-
-class Navigate(BaseModel):
-    delta: int = 0
-
-
-class RenderSceneRequest(BaseModel):
-    quality: str = "draft"  # "draft" or "high"
-    motion_override: str | None = None
-
-
-@app.post("/api/project/{slug}/storyboard/{scene_id}/navigate")
-async def navigate_version(slug: str, scene_id: int, body: Navigate):
-    """Step between image versions for a scene."""
-    sb_path, sb = load_storyboard(slug)
-    scene = find_scene(sb, scene_id)
-
-    total = len(scene.get("images", []))
-    if total:
-        scene["current_image"] = (scene.get("current_image", 0) + body.delta) % total
-    save_storyboard(sb_path, sb)
-    await sse_notify(slug, "storyboard-updated")
-    return {"ok": True, "scene": scene_id, "current": scene.get("current_image", 0)}
-
-
-@app.post("/api/project/{slug}/storyboard/{scene_id}/approve")
-async def approve_current(slug: str, scene_id: int):
-    """Approve the currently displayed image version and lock the scene."""
-    sb_path, sb = load_storyboard(slug)
-    scene = find_scene(sb, scene_id)
-
-    versions = scene.get("images", [])
-    idx = scene.get("current_image", 0)
-    if not versions or idx >= len(versions):
-        raise HTTPException(400, f"Scene {scene_id} has no image to approve")
-
-    for v in versions:
-        v["approved"] = False
-    versions[idx]["approved"] = True
-    scene["locked"] = True
-
-    save_storyboard(sb_path, sb)
-    await sse_notify(slug, f"scene-approved:{scene_id}")
-    return {"ok": True, "scene": scene_id}
-
-
-@app.post("/api/project/{slug}/storyboard/{scene_id}/unapprove")
-async def unapprove_scene(slug: str, scene_id: int):
-    """Clear any approved variant for the scene and unlock it.
-
-    Returns the path of the previously-approved image (if any) so callers
-    can record/restore context if needed.
-    """
-    sb_path, sb = load_storyboard(slug)
-    scene = find_scene(sb, scene_id)
-
-    versions = scene.get("images", [])
-    prev_approved_path = None
-    for v in versions:
-        if v.get("approved"):
-            prev_approved_path = v.get("path")
-            break
-
-    for v in versions:
-        v["approved"] = False
-    scene["locked"] = False
-
-    save_storyboard(sb_path, sb)
-    await sse_notify(slug, f"scene-unapproved:{scene_id}")
-    return {"ok": True, "scene": scene_id, "prev_approved_path": prev_approved_path}
-
-
 @app.post("/api/project/{slug}/render")
 async def trigger_render(slug: str):
-    """Trigger assembly. Gates on all scenes having an approved image."""
+    """Trigger assembly. Gates on every scene having at least one 'still'
+    asset with a path in its asset_timeline."""
     _, sb = load_storyboard(slug)
-    unapproved = [
+    missing_still = [
         s["id"] for s in sb.get("scenes", [])
-        if not any(v.get("approved") for v in s.get("images", []))
+        if not any(
+            a.get("type") == "still" and a.get("path")
+            for a in s.get("asset_timeline", [])
+        )
     ]
-    if unapproved:
-        raise HTTPException(400, f"Scenes not approved: {unapproved}")
+    if missing_still:
+        raise HTTPException(400, f"Scenes missing still asset in timeline: {missing_still}")
 
     # TODO: actually call assemble.py in background
     await sse_notify(slug, "render-queued")
     return {"ok": True, "message": "Render queued"}
+
+
+@app.get("/api/project/{slug}/storyboard/{scene_id}/timeline")
+async def get_scene_timeline(slug: str, scene_id: int):
+    """Return the current asset_timeline for the scene."""
+    slug = slug.strip()
+    project_dir(slug)  # validate
+
+    sb_path, sb = load_storyboard(slug)
+    scene = find_scene(sb, scene_id)
+    return {"ok": True, "scene": scene_id, "asset_timeline": scene.get("asset_timeline")}
+
+
+@app.put("/api/project/{slug}/storyboard/{scene_id}/timeline")
+async def update_scene_timeline(slug: str, scene_id: int, body: dict):
+    """Replace the asset_timeline for a scene. Accepts body with "asset_timeline" key."""
+    slug = slug.strip()
+    project_dir(slug)  # validate
+
+    if not isinstance(body, dict) or "asset_timeline" not in body:
+        raise HTTPException(400, 'Body must include "asset_timeline" key')
+    sb_path, sb = load_storyboard(slug)
+    scene = find_scene(sb, scene_id)
+    scene["asset_timeline"] = body["asset_timeline"]
+    save_storyboard(sb_path, sb)
+    await sse_notify(slug, f"timeline-updated:{scene_id}")
+    return {"ok": True, "scene": scene_id}
 
 
 # ---------------------------------------------------------------------------
@@ -395,11 +330,14 @@ async def trigger_render(slug: str):
 # ---------------------------------------------------------------------------
 
 
+class RenderSceneRequest(BaseModel):
+    quality: str = "draft"  # "draft" or "high"
+
+
 @app.post("/api/project/{slug}/storyboard/{scene_id}/render-scene")
 async def render_single_scene(slug: str, scene_id: int, body: RenderSceneRequest):
-    """Render a single scene for preview. Supports draft/high quality and
-    optional motion override. Caches results to avoid re-rendering when
-    nothing changed."""
+    """Render a single scene for preview. Caches on sha256 of asset_timeline
+    + quality; skips re-render when inputs match."""
     # Validate scene exists
     _, sb = load_storyboard(slug)
     scene = find_scene(sb, scene_id)
@@ -409,12 +347,17 @@ async def render_single_scene(slug: str, scene_id: int, body: RenderSceneRequest
     mp4_path = renders_dir / f"scene-{scene_id:02d}.mp4"
     cache_path = renders_dir / f"scene-{scene_id:02d}-cache.json"
 
-    # Cache check
+    # Read scene["asset_timeline"] for cache key (sha256 of canonical json)
+    asset_timeline = scene.get("asset_timeline")
+    timeline_json = json.dumps(asset_timeline, sort_keys=True)
+    current_sha = hashlib.sha256(timeline_json.encode("utf-8")).hexdigest()
+
+    # Cache check: same sha256 AND same quality
     if mp4_path.exists() and cache_path.exists():
         try:
             cached = json.loads(cache_path.read_text())
-            if (cached.get("quality") == body.quality
-                    and cached.get("motion_override") == body.motion_override):
+            if (cached.get("sha256") == current_sha
+                    and cached.get("quality") == body.quality):
                 return {
                     "ok": True,
                     "path": str(mp4_path),
@@ -424,7 +367,7 @@ async def render_single_scene(slug: str, scene_id: int, body: RenderSceneRequest
         except (json.JSONDecodeError, KeyError):
             pass  # Corrupt cache — re-render
 
-    # Build the CLI command
+    # Build the CLI command WITHOUT --motion flag
     cmd = [
         sys.executable,
         "lib/assemble.py",
@@ -432,8 +375,6 @@ async def render_single_scene(slug: str, scene_id: int, body: RenderSceneRequest
         "--scene", str(scene_id),
         "--quality", body.quality,
     ]
-    if body.motion_override:
-        cmd += ["--motion", body.motion_override]
 
     try:
         result = subprocess.run(
@@ -449,10 +390,10 @@ async def render_single_scene(slug: str, scene_id: int, body: RenderSceneRequest
     if result.returncode != 0:
         raise HTTPException(500, f"Render failed for scene {scene_id}: {result.stderr[-2000:]}")
 
-    # Update cache
+    # Update cache: stores {"sha256": hash, "quality": body.quality}
     cache_path.write_text(json.dumps({
+        "sha256": current_sha,
         "quality": body.quality,
-        "motion_override": body.motion_override,
     }, indent=2))
 
     return {
