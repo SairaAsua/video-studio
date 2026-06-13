@@ -205,9 +205,9 @@ def render_scene(scene: dict, paths: dict, quality: str = "draft",
         else:
             # higher (later in sorted) with time window enable
             if use_blend:
-                ov = f"{current}{l_label}blend=all_mode={blend_mode}:enable='between(t\,{t_in_s}\,{t_out_s})'{out_label}"
+                ov = f"{current}{l_label}blend=all_mode={blend_mode}:enable='between(t" + chr(92) + ",{t_in_s}" + chr(92) + ",{t_out_s})'{out_label}"
             else:
-                ov = f"{current}{l_label}overlay=0:0:enable='between(t\,{t_in_s}\,{t_out_s})'{out_label}"
+                ov = f"{current}{l_label}overlay=0:0:enable='between(t" + chr(92) + ",{t_in_s}" + chr(92) + ",{t_out_s})'{out_label}"
         overlay_filters.append(ov)
         current = out_label
 
