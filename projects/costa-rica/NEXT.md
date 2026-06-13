@@ -1,93 +1,66 @@
-# Continue Here — Video Studio (2026-06-13, post-reset)
+# Continue Here — Video Studio (2026-06-13, post-v1.1)
 
 ## Where we are
 
-**Project reset.** Generated assets from previous session (FAL images, TTS audio,
-draft video, storyboard, script, SPINE) all deleted. Reason: FAL outputs were
-not satisfying, and the new canonical source corpus from MFM invalidates the
-old SPINE/script that Claude Code wrote.
+**v1.1 SHIPPED.** Per-scene workspace with Assets / Captions / Render
+tabs, mini-strip for cross-scene scan, and a feature flag (`?v3=1`).
+Tag: `v1.1` (commit TBD, will be set at end of v1.1.7).
 
-**This is a test project.** `costa-rica` is a sandbox for validating the
-video pipeline. The final video is not the goal — the pipeline is. We iterate
-on infra (motion, captions, b-roll, smooth rendering) with disposable content
-until the machinery is good, then produce real video for real projects.
+**Baseline before v1.1 work:** tag `v1.0-mvp` at commit `0d5feb3`.
 
-## Pipeline status (2026-06-13)
+**v1.1 release notes:** `~/wiki/projects/video-studio/notes/
+video-studio-v1.1-release-2026-06-13.md`
 
-- ✅ `app/main.py` running on :8900, dashboard v2 (state-driven, dark theme)
-- ✅ `lib/motion.py` — 8 motion presets (zoom_in, drift_l/r, push_in_l/r, parallax_l/r)
-- ✅ `lib/captions.py` — kinetic typography (fade + slide-up, Inter Tight/Inter, brand colors)
-- ✅ `lib/prototype.py` — mixed-reel validator (still+caption or still+broll+caption)
-- ✅ `lib/assemble.py` — multi-scene assembly (needs motion+captions integrated; not yet done)
-- ✅ xAI Grok Imagine for image gen (xai-oauth re-authed 2026-06-13, plugin shipped)
-- ✅ xAI Grok Imagine for video gen (configured, not used yet)
-- ⚠️ `prototype.py` 3-segment concat has a known ffmpeg parser issue — works for 1 segment reliably
-- ❌ No images, no audio, no SPINE, no storyboard, no script yet — start from zero
+## Next up (v2 backlog)
 
-## What to do next (in order)
+Nico flagged in the middle of v1.1 execution:
 
-### Phase 1: Re-synth from canonical sources (use MFM corpus)
+> "the SCRIPT panel should be resizable and minimizable"
 
-1. Read all 6 sources in `sources/` (FROZEN_FACTS first — that's the authority)
-2. Load `estilo-wellness` skill for voice/canon
-3. Write new `SPINE.md` — 5-6 beats over ~5 min. Use `SHORT_THESIS_EN.md` as
-   primary narrative (cleanest frame), pull details from `FROZEN_FACTS.md`
-4. Write new `script.md` — per-scene narration following SPINE
-5. Audit against `estilo-wellness` — tone, narrative openings, language rules
+This is the next concrete ask. It's a single dashboard tweak — a
+resizer handle on the script pane (draggable, stores width in
+localStorage) and a minimize/maximize toggle (icon button in
+pane-header, animated transition). Localised to `app/static/
+index.html`. ~80 lines of CSS + JS.
 
-### Phase 2: Visual storyboard (use Grok Imagine only — FAL removed)
+## v2 candidates (not yet prioritised)
 
-1. Update `DESIGN.md` to remove "FAL" language — say "xAI Grok Imagine" instead
-2. Write `storyboard.json` from script — scene visual_direction fields
-3. Agent generates stills via `image_generate` (Grok) per scene, quality model
-4. Review, iterate, approve in dashboard
-5. Optional: generate 1 b-roll with `grok-imagine-video` for a test scene
+From earlier conversation, gathered but not promised:
 
-### Phase 3: Render
+- **B-roll tab + cross-scene reference planner** (deferred from
+  v1.1 per forum review). When b-roll is actually wanted, build
+  this. Reference images auto-suggest from the scene's approved
+  still + a few cross-scene candidates.
+- **Concept viz tab (diagrams)** — **freeform prompt** input, not
+  JSON. Render-time placement (replace still vs overlay) is the
+  load-bearing unknown; resolve when we actually want a diagram.
+- **Audio sub-timings editor** — split the per-scene TTS into
+  per-phrase timings. Currently the `caption_phrases[].time_in/out`
+  is set manually or estimated from word count.
+- **Multi-asset primary per scene** — still + b-roll + concept
+  choosing what to render. Deferred; today the approved still is
+  the only primary.
+- **Drag-reorder reference UI** — when b-roll lands.
 
-1. Apply motion + captions to `lib/assemble.py` (currently only `prototype.py` has them)
-2. Re-render full video with new content
-3. Compare against previous draft (no longer exists — that's fine)
+## v1.1 lessons (baked into MEMORY.md)
 
-## Key files
+- Parallel writes to the same file (`index.html`) lose work in
+  the dispatcher's reset. Serialise or worktree.
+- `kanban --parent` is a hard prerequisite, not hierarchy. Leave
+  epics orphan and use `kanban link` for actual chain deps.
+- Several `kanban create` flags are missing from the CLI; set
+  via SQL on `kanban.db.tasks` columns.
+- `goal_mode=1` is essential for cards needing multi-turn in-loop
+  work.
+- Robin may ask the user for permission on read-only tests; drop a
+  comment with `--yolo --accept-hooks` to unlock.
 
-- `sources/` — canonical corpus, DO NOT EDIT
-- `DESIGN.md` — visual identity (brand colors, typography, motion mood, style suffix)
-- `SPINE.md` — narrative arc (5-6 beats)
-- `script.md` — per-scene narration text
-- `storyboard.json` — scene data, image versions
-- `app/main.py` — FastAPI :8900, image-gen is request-only (agent picks up via SSE)
-- `app/static/index.html` — dashboard
-- `lib/assemble.py` — ffmpeg assembly (needs motion+captions integration)
-- `lib/motion.py`, `lib/captions.py`, `lib/prototype.py` — already built
-- `assets/fonts/InterTight-Bold.ttf`, `Inter-Regular.ttf` — bundled
+## Project entry
 
-## Commands
-
-```bash
-# Start dashboard (if not already running on :8900)
-cd ~/Projects/video-studio
-~/.hermes/hermes-agent/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8900
-
-# Render video (after storyboard has approved images)
-~/.hermes/hermes-agent/venv/bin/python3 lib/assemble.py costa-rica
-
-# Regenerate TTS audio (if script changes)
-# Then re-run assemble
-```
-
-## Skills to load (before Phase 1)
-
-- `estilo-wellness` — AlterMundi brand voice canon, REQUIRED for any content writing
-- `project-memory` — for MEMORY.md conventions
-
-## Nico's preferences (carry over from before)
-
-- English for US investors
-- Positive, actionable tone (not "don't do X", but "here's the path")
-- Honestidad epistémica as brand asset (candor risk self-disclosure in Beat 6)
-- Premium, sober, no pseudoscience, no new-age aesthetic
-- Edge TTS free by default, ElevenLabs for premium public videos
-- Video should leave viewer wanting more, not exhaust them
-- **NEW (2026-06-13): FAL removed — Grok Imagine only for images**
-- **NEW (2026-06-13): Reset and start from canonical corpus, not from old SPINE**
+When re-entering:
+1. Read `MEMORY.md` (this project, in `~/Projects/video-studio/`).
+2. Check kanban `video-studio` — any `running`/`blocked` cards?
+3. Wiki notes under `~/wiki/projects/video-studio/notes/`.
+4. Server alive? `curl http://127.0.0.1:8900/`.
+5. Current state of `costa-rica/storyboard.json` (was clean as of
+   v1.0-mvp reset; check what's been touched since).

@@ -9,11 +9,11 @@
         {
           "path": "scenes/scene-01-v2.jpg",
           "seed": null,
-          "approved": true
+          "approved": false
         }
       ],
       "current_image": 0,
-      "locked": true,
+      "locked": false,
       "_duration_secs": 27.552,
       "motion_preset": "drift_left",
       "caption_phrases": [
@@ -57,25 +57,25 @@
         {
           "path": "scenes/scene-03-v2.jpg",
           "seed": null,
-          "approved": true
+          "approved": false
         }
       ],
       "current_image": 0,
-      "locked": true,
+      "locked": false,
       "_duration_secs": 38.4,
       "motion_preset": "push_in_left",
       "caption_phrases": [
         {
           "text": "Three offers. One wedge.",
+          "role": "display",
           "time_in": 1.5,
-          "time_out": 4.5,
-          "role": "display"
+          "time_out": 4.5
         },
         {
           "text": "Founder pricing, indicative ranges.",
-          "time_in": 5.0,
-          "time_out": 8.5,
           "role": "body",
+          "time_in": 5,
+          "time_out": 8.5,
           "font_size": 56
         }
       ]
