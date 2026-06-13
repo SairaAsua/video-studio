@@ -815,11 +815,31 @@
   }
   .timeline-zoom-bar span { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
 
-  /* Preview placeholder */
-  .timeline-preview-placeholder {
-    height: 120px; flex-shrink: 0; border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: center;
-    background: var(--bg); color: var(--text-muted); font-size: 12px; font-style: italic;
+  /* T7 Preview panel */
+  .preview-panel {
+    display: flex; align-items: center; gap: 8px;
+    height: 40px; flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    padding: 0 12px;
+  }
+  .preview-spinner {
+    width: 16px; height: 16px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: preview-spin 0.7s linear infinite;
+    flex-shrink: 0;
+    display: none;
+  }
+  @keyframes preview-spin {
+    to { transform: rotate(360deg); }
+  }
+  .preview-video-wrap {
+    display: none; padding: 6px 12px; background: var(--bg); flex-shrink: 0;
+  }
+  .preview-video-wrap video {
+    width: 100%; max-height: 300px; background: #000; display: block;
   }
 
   /* Ruler */
@@ -2208,7 +2228,7 @@ function renderV3Captions() {
 // ── Timeline tab ──
 let _timelineZoom = 1.0;
 let _timelineAssets = null;
-let _timelineDirty = false;
+let _timelineDirty = false;  // T7: used by previewRender to decide whether to persistTimeline() before render
 let _saveTimelineTimer = null;
 let _selectedAssetIndex = null;
 let _currentPxPerSec = 40;
@@ -2283,12 +2303,13 @@ function computeSnapped(value, pxPerSec, excludeIndex) {
 function markTimelineDirty() {
   _timelineDirty = true;
   if (_saveTimelineTimer) clearTimeout(_saveTimelineTimer);
-  _saveTimelineTimer = setTimeout(saveV3Timeline, 500);
+  _saveTimelineTimer = setTimeout(persistTimeline, 500);
 }
 
-async function saveV3Timeline() {
+async function persistTimeline() {
   const scene = state.scenes[state.v3Index];
   if (!scene || !_timelineAssets) return;
+  _timelineDirty = true;  // per T7: set true inside persist right before PUT
   try {
     await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene.id + '/timeline', {
       method: 'PUT',
@@ -2306,6 +2327,124 @@ async function saveV3Timeline() {
     setRenderMsg('Timeline save failed: ' + err.message, true);
     const sts = document.querySelector('.timeline-props-header .save-status');
     if (sts) sts.textContent = 'err';
+  }
+}
+
+async function previewRender() {
+  const scene = state.scenes[state.v3Index];
+  if (!scene || !state.slug) {
+    alert('No scene selected');
+    return;
+  }
+  const slug = state.slug;
+  const sceneId = scene.id;
+  const qualitySel = document.getElementById('preview-quality');
+  const quality = (qualitySel && qualitySel.value) ? qualitySel.value : 'draft';
+
+  const spinner = document.getElementById('preview-spinner');
+  const video = document.getElementById('preview-video');
+  const videoWrap = document.getElementById('preview-video-wrap');
+  const dlBtn = document.getElementById('preview-download-btn');
+  const delBtn = document.getElementById('preview-delete-btn');
+  const renderBtn = document.getElementById('preview-render-btn');
+
+  if (renderBtn) renderBtn.disabled = true;
+
+  // a/b/c: if dirty, persist (save) first, then ensure clean
+  if (_timelineDirty) {
+    try {
+      await persistTimeline();
+    } catch (e) {
+      if (renderBtn) renderBtn.disabled = false;
+      alert('Save failed before render: ' + (e && e.message ? e.message : e));
+      return;
+    }
+  }
+  _timelineDirty = false;
+
+  // d. show spinner, hide video/buttons
+  if (spinner) spinner.style.display = 'inline-block';
+  if (videoWrap) videoWrap.style.display = 'none';
+  if (dlBtn) dlBtn.style.display = 'none';
+  if (delBtn) delBtn.style.display = 'none';
+  if (video) { video.pause(); video.removeAttribute('src'); }
+
+  try {
+    // e. POST using fetch() as specified
+    const resp = await fetch('/api/project/' + encodeURIComponent(slug) + '/storyboard/' + sceneId + '/render-scene', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quality: quality })
+    });
+    let result = null;
+    try { result = await resp.json(); } catch (_) {}
+    if (!resp.ok) {
+      const msg = (result && result.detail) ? result.detail : (resp.status + ' ' + resp.statusText);
+      throw new Error(msg);
+    }
+    // f. success: hide spinner, set video.src = result.url, show video + btns
+    if (spinner) spinner.style.display = 'none';
+    if (renderBtn) renderBtn.disabled = false;
+    const url = result && result.url ? result.url : null;
+    if (video && url) {
+      video.src = url;
+      if (videoWrap) videoWrap.style.display = 'block';
+      if (dlBtn) dlBtn.style.display = '';
+      if (delBtn) delBtn.style.display = '';
+    }
+  } catch (err) {
+    // g. error
+    if (spinner) spinner.style.display = 'none';
+    if (renderBtn) renderBtn.disabled = false;
+    alert('Render failed: ' + (err && err.message ? err.message : err));
+    // stay in current state (no video shown)
+  }
+}
+
+async function previewDownload() {
+  const video = document.getElementById('preview-video');
+  if (!video || !video.src) return;
+  try {
+    const resp = await fetch(video.src);
+    if (!resp.ok) throw new Error(resp.status + ' ' + resp.statusText);
+    const blob = await resp.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const scene = state.scenes[state.v3Index];
+    const sid = (scene && scene.id != null) ? scene.id : 0;
+    a.download = 'scene-' + String(sid).padStart(2, '0') + '-preview.mp4';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function() { URL.revokeObjectURL(a.href); }, 1000);
+  } catch (e) {
+    alert('Download failed: ' + (e && e.message ? e.message : e));
+  }
+}
+
+async function previewDelete() {
+  const scene = state.scenes[state.v3Index];
+  if (!scene || !state.slug) return;
+  const slug = state.slug;
+  const sceneId = scene.id;
+  try {
+    await fetch('/api/project/' + encodeURIComponent(slug) + '/storyboard/' + sceneId + '/render-scene/delete', {
+      method: 'POST'
+    });
+    // hide UI elements
+    const videoWrap = document.getElementById('preview-video-wrap');
+    const dlBtn = document.getElementById('preview-download-btn');
+    const delBtn = document.getElementById('preview-delete-btn');
+    const video = document.getElementById('preview-video');
+    if (videoWrap) videoWrap.style.display = 'none';
+    if (dlBtn) dlBtn.style.display = 'none';
+    if (delBtn) delBtn.style.display = 'none';
+    if (video) {
+      video.pause();
+      video.removeAttribute('src');
+    }
+  } catch (e) {
+    alert('Delete cache failed: ' + (e && e.message ? e.message : e));
   }
 }
 
@@ -2803,11 +2942,22 @@ function renderV3Timeline() {
       '<span style="margin-left:auto">Duration: ' + totalDuration.toFixed(1) + 's</span>' +
     '</div>';
 
-  // Build preview placeholder
+  // Build preview panel (toolbar + video below) — replaces old placeholder
   const previewHtml =
-    '<div class="timeline-preview-placeholder">' +
-      '⏵ Preview — Scene ' + escHtml(String(scene.id)) +
-      (assets.length ? ' (' + assets.length + ' assets)' : '') +
+    '<div class="preview-panel">' +
+      '<select id="preview-quality" style="font-size:12px;padding:3px 6px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;">' +
+        '<option value="draft">draft</option>' +
+        '<option value="high">high</option>' +
+      '</select>' +
+      '<button class="btn primary" id="preview-render-btn" style="font-size:12px;padding:4px 10px;">Render Preview</button>' +
+      '<span class="preview-spinner" id="preview-spinner"></span>' +
+      '<span style="margin-left:auto;display:flex;gap:6px;align-items:center;">' +
+        '<button class="btn" id="preview-download-btn" style="font-size:11px;padding:2px 8px;display:none;" title="Download MP4">⬇</button>' +
+        '<button class="btn danger" id="preview-delete-btn" style="font-size:11px;padding:2px 8px;display:none;" title="Delete cached preview">🗑</button>' +
+      '</span>' +
+    '</div>' +
+    '<div class="preview-video-wrap" id="preview-video-wrap">' +
+      '<video id="preview-video" controls style="width:100%;max-height:300px;background:#000"></video>' +
     '</div>';
 
   // Build ruler ticks (inside scroll area now, pad shifts alignment)
@@ -2885,6 +3035,15 @@ function renderV3Timeline() {
       else if (action === 'zoom-fit') timelineZoomFit();
     });
   });
+
+  // Wire preview controls (T7)
+  const prb = container.querySelector('#preview-render-btn');
+  if (prb) prb.addEventListener('click', previewRender);
+  const pdb = container.querySelector('#preview-download-btn');
+  if (pdb) pdb.addEventListener('click', previewDownload);
+  const pdel = container.querySelector('#preview-delete-btn');
+  if (pdel) pdel.addEventListener('click', previewDelete);
+  // quality select needs no on-change handler (used at render time)
 
   // Wire block pointer interactions (drag + select)
   const blocks = container.querySelectorAll('.timeline-block');
