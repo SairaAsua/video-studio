@@ -5,17 +5,21 @@ video-studio dashboard — FastAPI server on localhost:8900.
 Serves the two-pane editor (script + storyboard) and artifact CRUD endpoints.
 Filesystem is the single source of truth — no database.
 
+The data model is asset_timeline-based: each scene holds an asset_timeline[]
+list of still assets (with per-asset fields for composition).
+
 Endpoints:
     GET  /                                  → dashboard HTML
     GET  /api/projects                      → list project slugs
     GET  /api/project/watch                 → SSE stream (all projects)
-    GET  /api/project/{slug}                → {script, storyboard, scene_images}
+    GET  /api/project/{slug}                → {script, storyboard, scene_images} (storyboard.scenes[].asset_timeline)
     PUT  /api/project/{slug}/script         → write script.md
-    PUT  /api/project/{slug}/storyboard/{scene_id}              → update scene fields
+    PUT  /api/project/{slug}/storyboard/{scene_id}              → update scene fields (incl. asset_timeline)
     POST /api/project/{slug}/storyboard/{scene_id}/image        → request generation (agent listens via SSE)
     GET  /api/project/{slug}/storyboard/{scene_id}/timeline     → get asset_timeline
     PUT  /api/project/{slug}/storyboard/{scene_id}/timeline     → set/replace asset_timeline (emits timeline-updated SSE)
-    POST /api/project/{slug}/render         → trigger render (gated on still asset with path in timeline)
+    POST /api/project/{slug}/storyboard/{scene_id}/render-scene → render single-scene preview (asset_timeline-driven)
+    POST /api/project/{slug}/render         → trigger render (gated on still asset with path in asset_timeline)
 
 Image paths in storyboard.json are always relative to the project directory
 (e.g. "scenes/scene-01-v1.png") and served at /projects/{slug}/{path}.
@@ -367,7 +371,7 @@ async def render_single_scene(slug: str, scene_id: int, body: RenderSceneRequest
         except (json.JSONDecodeError, KeyError):
             pass  # Corrupt cache — re-render
 
-    # Build the CLI command WITHOUT --motion flag
+    # Build the CLI command (asset_timeline-driven; no legacy motion override)
     cmd = [
         sys.executable,
         "lib/assemble.py",

@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Video Studio — Dashboard</title>
+<!-- Data model: asset_timeline-based. Each scene uses asset_timeline[] (fields: type, path, time_in/time_out (abs), layer, blend_mode, motion, opacity, caption_phrases asset-local).
+   Per-asset motion via motion.py or "none"; engine note in assemble.py: uses sequential duration_secs (abs time_in/time_out overlays known gap).
+   Legacy variant gallery (images[]/current_image/approve/approved) and CSS/JS for it remain for Assets tab only; docs/comments updated to asset_timeline terminology. motion_override and global motion_preset removed. -->
 <style>
   :root {
     --bg: #0b0f14;
@@ -684,7 +687,7 @@
     margin-top: 2px;
     line-height: 1;
   }
-  /* selection legend below the mini-strip: accent border = scene selected, green border = image active */
+  /* selection legend below the mini-strip: accent border = scene selected, green border = active image (from gallery for asset_timeline use) */
   #v3-legend {
     display: inline-flex;
     align-items: center;
@@ -1267,7 +1270,7 @@
       </div>
     </div>
 
-    <!-- Render tab -->
+    <!-- Render tab: full-project render trigger (asset_timeline-driven per-scene renders + concat). Per-scene preview lives in Timeline tab. -->
     <div class="tools-content hidden" id="tools-render" data-pane="render">
       <div class="prompts-toolbar">
         <button class="btn primary" id="tools-render-btn" disabled>Render full project</button>
@@ -1402,7 +1405,7 @@ function connectSSE() {
         }
         break;
       default:
-        // refresh, scene-approved, storyboard-updated, script-updated, render-queued
+        // refresh, scene-approved, storyboard-updated, script-updated, render-queued, timeline-updated
         reloadCurrent(data.slug);
     }
   };
@@ -1579,7 +1582,7 @@ function wireEvents() {
   // Exports pane
   $('exports-refresh-btn').addEventListener('click', () => loadExports());
 
-  // Render tab (TOOLS pane)
+  // Render tab (TOOLS pane) — asset_timeline full render entry point
   $('tools-render-btn').addEventListener('click', triggerRender);
 }
 
@@ -1799,8 +1802,8 @@ function renderExportItem(exp) {
 // ── v3 per-scene workspace: scene sidebar + tabbed panel ──
 
 function v3SceneStatus(scene) {
-  // Sidebar status glyph, by precedence: approved (any approved version) →
-  // in-progress (has a version) → no-image. Mirrors sceneCard()'s badge.
+  // Sidebar status glyph, by precedence: approved (any approved version in images gallery) →
+  // in-progress (has a version) → no-image. (Asset gallery feeds asset_timeline still selection.)
   const versions = scene.images || [];
   if (versions.some((v) => v.approved)) return { icon: '●', cls: 'approved' };
   if (versions.length) return { icon: '▸', cls: 'in-progress' };
@@ -2552,7 +2555,7 @@ async function refreshTimelineFromServer(sceneId) {
 }
 
 function buildTimelineBin(currentAssets) {
-  // Collect all approved assets across all scenes
+  // Collect all approved assets across all scenes (for bin; asset_timeline consumes selected stills)
   const allStills = [];
   (state.scenes || []).forEach(s => {
     (s.asset_timeline || []).forEach(a => {

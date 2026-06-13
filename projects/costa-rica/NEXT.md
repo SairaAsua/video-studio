@@ -2,9 +2,19 @@
 
 ## Where we are
 
-**v1.1 SHIPPED.** Per-scene workspace with Assets / Captions / Render
+**v1.1 SHIPPED.** Per-scene workspace with Assets / Captions / Timeline
 tabs, mini-strip for cross-scene scan, and a feature flag (`?v3=1`).
+Asset_timeline is the single per-scene structure for composition.
+
 Tag: `v1.1` (commit TBD, will be set at end of v1.1.7).
+
+**Current data model (asset_timeline):**
+- Single per-scene structure is `asset_timeline[]`
+- Fields (per asset): `type` (still only), `path`, `time_in`/`time_out` (absolute), `layer`, `blend_mode`, `motion`, `opacity`, `caption_phrases` (asset-local)
+- Per-asset motion uses `motion` field (motion.py presets or "none")
+- No `images[]`, `motion_preset`, `approve`/`approved`, `motion_override`, `current_image`, `locked` in the timeline model
+
+**Engine note (assemble.py):** uses sequential `duration_secs` accumulation per-asset for time windows / captions / enable windows. Absolute `time_in`/`time_out` overlay positioning in the filter graph is a known gap (not yet rendered that way).
 
 **Baseline before v1.1 work:** tag `v1.0-mvp` at commit `0d5feb3`.
 

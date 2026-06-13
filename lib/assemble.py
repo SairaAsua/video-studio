@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
 """
-assemble.py — ffmpeg video assembly.
+assemble.py — ffmpeg video assembly for the asset_timeline pipeline.
 
-Takes storyboard images + per-scene audio → renders final MP4.
+Multi-layer per-scene composition + concat.
 
 Pipeline:
-  1. Load storyboard.json → scene timings, image paths, motion_preset, captions
-  2. Load per-scene audio files (Edge TTS .mp3)
-  3. For each scene: still image + motion preset + drawtext captions + audio
-     → temp clip (MP4 with h264 video + aac audio, re-encoded)
-  4. Concat all clips with -c copy (stream copy, no re-encode) → final.mp4
-  5. Update storyboard.json with the final path
+  - Per scene: black 1920x1080 base + multi-layer composition from
+    asset_timeline[] (not images[])
+  - Per-asset motion (via `motion` field; uses motion.py presets or "none")
+  - Per-asset opacity (colorchannelmixer)
+  - Per-asset captions (offset by asset time_in → build_caption_chain)
+  - Bottom-up overlay by layer asc (blend_mode support with fallback)
+  - Audio unchanged (per-scene narration + anullsrc fallback)
+  - Per-scene mp4 (re-encoded) → concat -c copy for final export
 
-This per-scene-then-concat approach is more robust than a single
-complex -filter_complex graph: each scene is independent, can be
-inspected individually, and concat with -c copy is trivial.
+Note: engine currently uses sequential `duration_secs` per-asset for
+time windows; absolute `time_in`/`time_out` overlay support is a known gap.
+
+Drops all references to: images[], motion_preset, approved, motion_override.
+The data model field for motion is `motion` (per-asset).
 
 Usage:
     python lib/assemble.py <project-slug> [--quality draft|high] [--debug-filter]
@@ -60,12 +64,12 @@ def _strip_filter_for_audio_check(audio_path: Path, duration: float) -> list:
 
 def render_scene(scene: dict, paths: dict, quality: str = "draft",
                  width: int = 1920, height: int = 1080,
-                 motion_override: str | None = None, debug_filter: bool = False) -> Path:
+                 debug_filter: bool = False) -> Path:
     """
     Render a single scene from asset_timeline (multi-still layered composition):
-    black canvas + per-asset looped stills (with per-asset motion_preset + offset captions + opacity)
+    black canvas + per-asset looped stills (with per-asset motion + offset captions + opacity)
     + optional audio → mp4 (re-encoded).
-    Full asset_timeline only; no legacy scene["images"] path.
+    Full asset_timeline only.
     """
     scene_id = scene["id"]
 
@@ -129,8 +133,8 @@ def render_scene(scene: dict, paths: dict, quality: str = "draft",
         layer = int(asset.get("layer", 0))
         t_offset = entry["time_in"]
 
-        # motion (override applies to all assets for this call)
-        m_preset = motion_override if motion_override is not None else asset.get("motion_preset")
+        # motion per-asset (spec field is `motion`; legacy `motion_preset` fallback for data compat)
+        m_preset = asset.get("motion") or asset.get("motion_preset")
         if m_preset:
             motion = get_motion(m_preset, w=width, h=height)
         else:
@@ -273,13 +277,12 @@ def concat_scenes(scene_paths: list[Path], output_path: Path, quality: str = "dr
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: assemble.py <slug> [--quality draft|high] [--scene <id>] [--motion <preset>] [--debug-filter]")
+        print("Usage: assemble.py <slug> [--quality draft|high] [--scene <id>] [--debug-filter]")
         sys.exit(1)
 
     slug = sys.argv[1]
     quality = "draft"
     single_scene = None
-    motion_override = None
     debug_filter = False
 
     args = sys.argv[2:]
@@ -289,8 +292,6 @@ def main():
             quality = args[i + 1]; i += 2
         elif args[i] == "--scene" and i + 1 < len(args):
             single_scene = int(args[i + 1]); i += 2
-        elif args[i] == "--motion" and i + 1 < len(args):
-            motion_override = args[i + 1]; i += 2
         elif args[i] == "--debug-filter":
             debug_filter = True; i += 1
         else:
@@ -305,28 +306,20 @@ def main():
         if not scene:
             print(f"Scene {single_scene} not found", file=sys.stderr)
             sys.exit(1)
-        output = render_scene(scene, paths, quality, motion_override=motion_override, debug_filter=debug_filter)
+        output = render_scene(scene, paths, quality, debug_filter=debug_filter)
         print(f"Rendered: {output}")
         return
 
-    # All scenes must have an approved 'still' asset with a valid path in
-    # their asset_timeline before a full render.
-    invalid, unapproved = [], []
+    # All scenes must have at least one 'still' asset with a valid path
+    # in their asset_timeline before a full render.
+    invalid = []
     for s in scenes:
         stills = [a for a in s.get("asset_timeline", [])
                   if a.get("type") == "still" and a.get("path")]
         if not stills:
             invalid.append(s["id"])
-        elif not any(a.get("approved") for a in stills):
-            unapproved.append(s["id"])
     if invalid:
         print(f"ERROR: {len(invalid)} scenes without a valid 'still' asset (type+path): {invalid}")
-    if unapproved:
-        if debug_filter:
-            print(f"DEBUG: {len(unapproved)} scenes without approved asset (proceeding for filter debug): {unapproved}")
-        else:
-            print(f"ERROR: {len(unapproved)} scenes without an approved asset: {unapproved}")
-    if invalid or (unapproved and not debug_filter):
         sys.exit(1)
 
     print(f"Rendering {len(scenes)} scenes (quality={quality})…")
@@ -334,9 +327,9 @@ def main():
     for scene in scenes:
         asset = (scene.get("asset_timeline") or [{}])[0]
         print(f"  scene {scene['id']:02d} ({asset.get('duration_secs', 0.0):.1f}s, "
-              f"motion={asset.get('motion_preset', '?')}, "
+              f"motion={asset.get('motion') or asset.get('motion_preset', '?')}, "
               f"captions={len(asset.get('caption_phrases', []))})")
-        output = render_scene(scene, paths, quality, motion_override=motion_override, debug_filter=debug_filter)
+        output = render_scene(scene, paths, quality, debug_filter=debug_filter)
         rendered.append(output)
 
     if debug_filter:
