@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Storyboard",
-  "description": "One record per scene with versioned image stacks.",
+  "description": "One record per scene. Each scene composites a layer-based asset_timeline.",
   "type": "object",
   "properties": {
     "project": { "type": "string" },
@@ -15,21 +15,57 @@
           "time_out": { "type": "string" },
           "text": { "type": "string", "description": "Narration for this scene" },
           "visual_direction": { "type": "string" },
-          "images": {
+          "asset_timeline": {
             "type": "array",
+            "description": "Layer-based assets composited for this scene. Layer 0 is the base/primary; higher layers overlay on top.",
             "items": {
               "type": "object",
               "properties": {
-                "path": { "type": "string" },
-                "seed": { "type": "integer" },
-                "approved": { "type": "boolean", "default": false }
-              }
+                "type": {
+                  "type": "string",
+                  "enum": ["still"],
+                  "description": "Asset type. Currently only 'still' supported."
+                },
+                "layer": {
+                  "type": "integer",
+                  "description": "Layer index. 0 = base/primary. Higher = overlay."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Relative path to image file from project root."
+                },
+                "seed": {
+                  "type": ["integer", "null"],
+                  "description": "Generation seed, null for Grok (no seed control)."
+                },
+                "approved": { "type": "boolean", "default": false },
+                "duration_secs": {
+                  "type": "number",
+                  "description": "Duration this asset spans in the timeline."
+                },
+                "motion_preset": {
+                  "type": "string",
+                  "description": "Motion preset from lib/motion.py"
+                },
+                "caption_phrases": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "text": { "type": "string" },
+                      "time_in": { "type": "number" },
+                      "time_out": { "type": "number" },
+                      "role": { "type": "string", "enum": ["display", "body"] },
+                      "font_size": { "type": "integer" }
+                    }
+                  }
+                }
+              },
+              "required": ["type", "layer", "path"]
             }
-          },
-          "current_image": { "type": "integer", "default": 0 },
-          "locked": { "type": "boolean", "default": false }
+          }
         },
-        "required": ["id", "time_in", "time_out", "text", "visual_direction"]
+        "required": ["id", "asset_timeline"]
       }
     }
   }

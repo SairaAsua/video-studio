@@ -205,18 +205,30 @@ def main():
         print(f"Rendered: {output}")
         return
 
-    # All scenes must have approved images
-    unapproved = [s for s in scenes if not any(v.get("approved") for v in s.get("images", []))]
+    # All scenes must have an approved 'still' asset with a valid path in
+    # their asset_timeline before a full render.
+    invalid, unapproved = [], []
+    for s in scenes:
+        stills = [a for a in s.get("asset_timeline", [])
+                  if a.get("type") == "still" and a.get("path")]
+        if not stills:
+            invalid.append(s["id"])
+        elif not any(a.get("approved") for a in stills):
+            unapproved.append(s["id"])
+    if invalid:
+        print(f"ERROR: {len(invalid)} scenes without a valid 'still' asset (type+path): {invalid}")
     if unapproved:
-        print(f"ERROR: {len(unapproved)} scenes without approved image: {[s['id'] for s in unapproved]}")
+        print(f"ERROR: {len(unapproved)} scenes without an approved asset: {unapproved}")
+    if invalid or unapproved:
         sys.exit(1)
 
     print(f"Rendering {len(scenes)} scenes (quality={quality})…")
     rendered = []
     for scene in scenes:
-        print(f"  scene {scene['id']:02d} ({scene['_duration_secs']:.1f}s, "
-              f"motion={scene.get('motion_preset', '?')}, "
-              f"captions={len(scene.get('caption_phrases', []))})")
+        asset = scene["asset_timeline"][0]
+        print(f"  scene {scene['id']:02d} ({asset.get('duration_secs', 0.0):.1f}s, "
+              f"motion={asset.get('motion_preset', '?')}, "
+              f"captions={len(asset.get('caption_phrases', []))})")
         output = render_scene(scene, paths, quality)
         rendered.append(output)
 
