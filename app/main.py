@@ -12,7 +12,7 @@ Endpoints:
     GET  /                                  → dashboard HTML
     GET  /api/projects                      → list project slugs
     GET  /api/project/watch                 → SSE stream (all projects)
-    GET  /api/project/{slug}                → {script, storyboard, scene_images} (storyboard.scenes[].asset_timeline)
+    GET  /api/project/{slug}                → {script, storyboard, scene_media} (storyboard.scenes[].asset_timeline)
     PUT  /api/project/{slug}/script         → write script.md
     PUT  /api/project/{slug}/storyboard/{scene_id}              → update scene fields (incl. asset_timeline)
     POST /api/project/{slug}/storyboard/{scene_id}/image        → request generation (agent listens via SSE)
@@ -181,13 +181,13 @@ async def get_project(slug: str):
         result["storyboard"] = json.loads(sb_path.read_text())
 
     # Generated images, project-relative — same convention as storyboard.json.
-    # The bin is filesystem-sourced: any supported image type counts.
+    # The bin is filesystem-sourced: any supported image/video type counts.
     scenes_dir = proj / "scenes"
     if scenes_dir.exists():
-        image_exts = {".jpg", ".jpeg", ".png", ".webp"}
-        result["scene_images"] = sorted(
+        media_exts = {".jpg", ".jpeg", ".png", ".webp", ".mp4", ".webm", ".mov"}
+        result["scene_media"] = sorted(
             str(p.relative_to(proj)) for p in scenes_dir.glob("*.*")
-            if p.suffix.lower() in image_exts
+            if p.suffix.lower() in media_exts
         )
 
     return result

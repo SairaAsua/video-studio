@@ -2555,34 +2555,45 @@ async function refreshTimelineFromServer(sceneId) {
 }
 
 function buildTimelineBin(currentAssets) {
-  // Collect all approved assets across all scenes (for bin; asset_timeline consumes selected stills)
-  const allStills = [];
+  // Collect all approved assets across all scenes (for bin; asset_timeline consumes selected assets)
+  const allAssets = [];
   (state.scenes || []).forEach(s => {
     (s.asset_timeline || []).forEach(a => {
-      if (a.type === 'still' && a.path) {
-        allStills.push({ path: a.path, layer: a.layer, sceneId: s.id });
+      if ((a.type === 'still' || a.type === 'video') && a.path) {
+        allAssets.push({ path: a.path, layer: a.layer, sceneId: s.id, type: a.type });
       }
     });
   });
 
-  if (!allStills.length) {
-    return '<div class="timeline-bin"><div class="timeline-bin-label">Bin — no stills</div></div>';
+  if (!allAssets.length) {
+    return '<div class="timeline-bin"><div class="timeline-bin-label">Bin — no media</div></div>';
   }
 
-  const itemsHtml = allStills.map(a => {
+  let stillCount = 0, videoCount = 0;
+  allAssets.forEach(a => { if (a.type === 'video') videoCount++; else stillCount++; });
+
+  const itemsHtml = allAssets.map(a => {
+    const title = escHtml(a.path) + ' (scene ' + a.sceneId + ')';
+    const fname = escHtml(a.path.split('/').pop() || '?');
+    if (a.type === 'video') {
+      return '' +
+        '<div class="timeline-bin-thumb" data-type="video" title="' + title + '" style="background:#111;display:flex;align-items:center;justify-content:center;font-size:9px;color:#aaa;text-align:center;padding:2px;">' +
+          '▶ Video: ' + fname +
+        '</div>';
+    }
     const imgSrc = '/projects/' + encodeURIComponent(state.slug) + '/' + a.path;
     return '' +
-      '<div class="timeline-bin-thumb" title="' + escHtml(a.path) + ' (scene ' + a.sceneId + ')">' +
+      '<div class="timeline-bin-thumb" data-type="still" title="' + title + '">' +
         '<img src="' + imgSrc + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" style="width:100%;height:100%;object-fit:cover">' +
         '<div class="empty-thumb" style="display:none;align-items:center;justify-content:center;width:100%;height:100%">' +
-          escHtml(a.path.split('/').pop() || '?') +
+          fname +
         '</div>' +
       '</div>';
   }).join('');
 
   return '' +
     '<div class="timeline-bin">' +
-      '<div class="timeline-bin-label">Bin — ' + allStills.length + ' stills from filesystem</div>' +
+      '<div class="timeline-bin-label">Bin — ' + stillCount + ' stills + ' + videoCount + ' videos from filesystem</div>' +
       '<div class="timeline-bin-items">' + itemsHtml + '</div>' +
     '</div>';
 }
@@ -2641,10 +2652,11 @@ function buildTimelinePropsHtml() {
   const motion = a.motion_preset || 'none';
   const layer = (a.layer != null ? a.layer : 0);
   const pathLabel = a.path ? a.path.split('/').pop() : ('asset-' + ai);
+  const typeLabel = (a.type === 'video' ? 'Video' : 'Still');
   let html = '' +
     '<div class="timeline-props" data-ai="' + ai + '">' +
       '<div class="timeline-props-header">' +
-        '<span>Asset ' + ai + ' — ' + escHtml(pathLabel) + '</span>' +
+        '<span>Asset ' + ai + ' <span style="color:var(--accent);font-size:10px;">[' + typeLabel + ']</span> — ' + escHtml(pathLabel) + '</span>' +
         '<span class="save-status" style="margin-left:auto;font-size:10px;color:var(--text-muted)"></span>' +
         '<button class="btn btn-icon" data-action="close-props" title="Close">✕</button>' +
       '</div>' +
@@ -3232,8 +3244,9 @@ function renderV3Timeline() {
       let path = '';
       const m = title.match(/^(.+) \(scene/);
       if (m) path = m[1];
+      const type = thumb.getAttribute('data-type') || 'still';
       if (path) {
-        e.dataTransfer.setData('application/json', JSON.stringify({ path: path }));
+        e.dataTransfer.setData('application/json', JSON.stringify({ path: path, type: type }));
         e.dataTransfer.effectAllowed = 'copy';
       }
     });
@@ -3268,12 +3281,25 @@ function renderV3Timeline() {
       let timeIn = dropX / _currentPxPerSec;
       timeIn = computeSnapped(timeIn, _currentPxPerSec, -1);
       snapshotBeforeMutate();
+      // Detect video by extension from the drag data or path
+      let dragType = 'still';
+      try {
+        const raw = e.dataTransfer.getData('application/json');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.type) dragType = parsed.type;
+        }
+      } catch (ex) {}
+      if (dragType !== 'video') {
+        const ext = (path.split('.').pop() || '').toLowerCase();
+        if (['mp4','webm','mov'].indexOf(ext) !== -1) dragType = 'video';
+      }
       const newAsset = {
-        type: 'still',
+        type: dragType,
         layer: 0,
         path: path,
         approved: false,
-        duration_secs: 5.0,
+        duration_secs: (dragType === 'video' ? 10.0 : 5.0),
         motion_preset: null,
         time_in: Number(timeIn.toFixed(2)),
         caption_phrases: []

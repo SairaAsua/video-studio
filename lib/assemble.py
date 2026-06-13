@@ -99,9 +99,9 @@ def render_scene(scene: dict, paths: dict, quality: str = "draft",
     cum = 0.0
     for item in sorted_assets:
         a = item["asset"]
-        if a.get("type") != "still":
-            t = a.get("type")
-            raise RuntimeError(f"Scene {scene_id}: unsupported asset type '{t}' (only 'still' supported)")
+        t = a.get("type")
+        if t not in ("still", "video"):
+            raise RuntimeError(f"Scene {scene_id}: unsupported asset type '{t}' (only 'still' and 'video' supported)")
         dur = float(a.get("duration_secs", 0.0))
         item["time_in"] = cum
         item["dur"] = dur
@@ -128,7 +128,13 @@ def render_scene(scene: dict, paths: dict, quality: str = "draft",
     for entry in asset_list:
         asset = entry["asset"]
         resolved = paths["scenes"].parent / asset["path"]
-        cmd_inputs += ["-loop", "1", "-framerate", "30", "-i", str(resolved)]
+        atype = asset.get("type") or "still"
+        if atype == "video":
+            t_in = float(asset.get("time_in", 0.0))
+            dsecs = float(asset.get("duration_secs", 5.0))
+            cmd_inputs += ["-ss", str(t_in), "-t", str(dsecs), "-i", str(resolved)]
+        else:
+            cmd_inputs += ["-loop", "1", "-framerate", "30", "-i", str(resolved)]
 
     # Audio filter (unchanged helper; relies on audio at index 1 when real audio present)
     audio_filter = _strip_filter_for_audio_check(audio_path, total_duration)
@@ -144,11 +150,16 @@ def render_scene(scene: dict, paths: dict, quality: str = "draft",
         t_offset = entry["time_in"]
 
         # motion per-asset (spec field is `motion`; legacy `motion_preset` fallback for data compat)
-        m_preset = asset.get("motion") or asset.get("motion_preset")
-        if m_preset:
-            motion = get_motion(m_preset, w=width, h=height)
+        atype = asset.get("type") or "still"
+        if atype == "still":
+            m_preset = asset.get("motion") or asset.get("motion_preset")
+            if m_preset:
+                motion = get_motion(m_preset, w=width, h=height)
+            else:
+                motion = None
         else:
-            motion = None
+            # video: passthrough scale+crop instead of get_motion
+            motion = f"scale=w={width}:h={height}:force_original_aspect_ratio=decrease,crop={width}:{height}"
 
         # captions: offset relative times by this asset's scene time_in
         caps = asset.get("caption_phrases", []) or []
@@ -442,16 +453,16 @@ def main():
         print(f"Rendered: {output}")
         return
 
-    # All scenes must have at least one 'still' asset with a valid path
+    # All scenes must have at least one 'still' or 'video' asset with a valid path
     # in their asset_timeline before a full render.
     invalid = []
     for s in scenes:
-        stills = [a for a in s.get("asset_timeline", [])
-                  if a.get("type") == "still" and a.get("path")]
-        if not stills:
+        assets = [a for a in s.get("asset_timeline", [])
+                  if (a.get("type") in ("still", "video")) and a.get("path")]
+        if not assets:
             invalid.append(s["id"])
     if invalid:
-        print(f"ERROR: {len(invalid)} scenes without a valid 'still' asset (type+path): {invalid}")
+        print(f"ERROR: {len(invalid)} scenes without a valid 'still' or 'video' asset (type+path): {invalid}")
         sys.exit(1)
 
     print(f"Rendering {len(scenes)} scenes (quality={quality})…")

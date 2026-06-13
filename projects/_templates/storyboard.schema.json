@@ -23,8 +23,8 @@
               "properties": {
                 "type": {
                   "type": "string",
-                  "enum": ["still"],
-                  "description": "Asset type. Currently only 'still' supported."
+                  "enum": ["still", "video"],
+                  "description": "Asset type: 'still' or 'video'."
                 },
                 "layer": {
                   "type": "integer",
