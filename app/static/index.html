@@ -94,6 +94,7 @@
     display: flex;
     flex-direction: column;
     background: var(--surface);
+    position: relative;
   }
   .pane-header {
     padding: 10px 16px;
@@ -797,6 +798,32 @@
   }
   #v3-tab-render { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
   #v3-tab-render.hidden { display: none; }
+
+  /* ── Script pane resize handle ── */
+  .pane-resize-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: -3px;
+    width: 5px;
+    background: transparent;
+    cursor: ew-resize;
+    z-index: 10;
+  }
+  .pane-resize-handle:hover,
+  .pane-resize-handle.active {
+    /* 2px-wide vertical bar centered within the 5px hit area */
+    background: linear-gradient(
+      to right,
+      transparent 1.5px,
+      rgba(201, 160, 58, 0.4) 1.5px,
+      rgba(201, 160, 58, 0.4) 3.5px,
+      transparent 3.5px
+    );
+  }
+  body.resizing-script-pane {
+    user-select: none;
+  }
 </style>
 </head>
 <body>
@@ -823,6 +850,7 @@
     </div>
     <textarea class="script-editor" id="script-editor"
       placeholder="Write narration script here...&#10;&#10;## Scene 1 — Title (0:00–0:45)&#10;Narration text...&#10;&#10;## Scene 2 — Title (0:45–1:30)&#10;Narration text..."></textarea>
+    <div class="pane-resize-handle" id="pane-resize-handle"></div>
   </section>
 
   <!-- Storyboard Pane -->
@@ -2108,10 +2136,78 @@ async function v3RenderDelete(scene) {
   }
 }
 
+// ── Script pane resizer (draggable right edge) ──
+function initPaneResize() {
+  const handle = $('pane-resize-handle');
+  const pane = document.querySelector('.pane-script');
+  if (!handle || !pane) return;
+
+  const minW = 240;
+  const getMaxW = () => Math.floor(window.innerWidth * 0.70);
+
+  // Lower the min-width constraint so the 240px clamp can take effect (overrides CSS 360px).
+  pane.style.minWidth = minW + 'px';
+
+  // Apply persisted (or fallback) width immediately on load.
+  // Use explicit flex:none + width so flex children don't fight it.
+  const saved = localStorage.getItem('script-pane-width-px');
+  let initialW = null;
+  if (saved != null) {
+    const parsed = parseFloat(saved);
+    if (Number.isFinite(parsed)) initialW = parsed;
+  }
+  if (initialW != null) {
+    initialW = Math.max(minW, Math.min(initialW, getMaxW()));
+    pane.style.flex = 'none';
+    pane.style.width = initialW + 'px';
+  } else {
+    // Fallback to 40% (as explicit to match spec; CSS default remains if omitted)
+    pane.style.flex = 'none';
+    pane.style.width = '40%';
+  }
+
+  // Drag handling (unique locals to avoid any global collision)
+  handle.addEventListener('mousedown', (downEvt) => {
+    downEvt.preventDefault();
+    const startX = downEvt.clientX;
+    // Measure current rendered width (works whether px or % at start of drag)
+    const startWidth = pane.getBoundingClientRect().width;
+
+    handle.classList.add('active');
+    document.body.classList.add('resizing-script-pane');
+    const prevUserSelect = document.body.style.userSelect;
+    document.body.style.userSelect = 'none';
+
+    const onMouseMove = (moveEvt) => {
+      const delta = moveEvt.clientX - startX;
+      let newW = startWidth + delta;
+      const maxW = getMaxW();
+      newW = Math.max(minW, Math.min(newW, maxW));
+      pane.style.flex = 'none';
+      pane.style.width = newW + 'px';
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      handle.classList.remove('active');
+      document.body.classList.remove('resizing-script-pane');
+      document.body.style.userSelect = prevUserSelect || '';
+      // Persist the final pixel width
+      const finalW = pane.getBoundingClientRect().width;
+      localStorage.setItem('script-pane-width-px', String(Math.round(finalW)));
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  });
+}
+
 // ── Init ──
 
 async function init() {
   wireEvents();
+  initPaneResize();
   connectSSE();
   try {
     const projects = await listProjects();
