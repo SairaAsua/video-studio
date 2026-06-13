@@ -678,6 +678,125 @@
   .toast.hidden { display: none; }
   #v3-tab-assets { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
   #v3-tab-assets.hidden { display: none; }
+
+  /* ── Captions tab (v1.1.3) ── */
+  .captions-editor {
+    padding: 14px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  .caption-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+  .caption-card-fields {
+    display: grid;
+    grid-template-columns: 1fr 110px 80px 80px 80px;
+    gap: 8px;
+    align-items: start;
+  }
+  .caption-card-fields .field-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+  .caption-card-fields input,
+  .caption-card-fields select {
+    width: 100%;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 5px 7px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    outline: none;
+  }
+  .caption-card-fields input:focus,
+  .caption-card-fields select:focus {
+    border-color: var(--accent-dim);
+  }
+  .caption-card-fs.hidden { display: none; }
+  .caption-timing-estimate {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 6px;
+    font-style: italic;
+  }
+  #v3-tab-captions { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+  #v3-tab-captions.hidden { display: none; }
+
+  /* ── Render tab (v1.1.4) ── */
+  .render-editor {
+    padding: 14px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  .render-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .render-toolbar label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .render-toolbar select {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+    font-family: inherit;
+  }
+  .render-preview {
+    background: #000;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    margin-bottom: 12px;
+    text-align: center;
+  }
+  .render-preview video {
+    width: 100%;
+    max-height: 360px;
+  }
+  .render-preview .empty {
+    padding: 60px 20px;
+    color: var(--text-muted);
+  }
+  .render-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+  .render-meta code {
+    background: var(--bg);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+  }
+  .render-footer-note {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-style: italic;
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+    margin-top: 12px;
+  }
+  #v3-tab-render { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+  #v3-tab-render.hidden { display: none; }
 </style>
 </head>
 <body>
@@ -737,8 +856,8 @@
             <img id="assets-preview-img">
           </div>
         </div>
-        <div class="v3-tab-body hidden" id="v3-tab-captions">Coming in v1.1.3</div>
-        <div class="v3-tab-body hidden" id="v3-tab-render">Coming in v1.1.4</div>
+        <div class="v3-tab-body hidden" id="v3-tab-captions"></div>
+        <div class="v3-tab-body hidden" id="v3-tab-render"></div>
       </div>
     </div>
   </section>
@@ -1485,6 +1604,13 @@ function renderV3Workspace() {
     : `Scene ${scene.id}`;
 
   renderV3Assets();
+  // Refresh the active tab's content for the new scene
+  const activeTab = document.querySelector('#v3-tab-bar .tab-btn.active');
+  if (activeTab) {
+    const tabName = activeTab.dataset.v3Tab;
+    if (tabName === 'captions') renderV3Captions();
+    else if (tabName === 'render') renderV3Render();
+  }
 }
 
 function switchV3Tab(name) {
@@ -1495,6 +1621,8 @@ function switchV3Tab(name) {
     $(`v3-tab-${tab}`).classList.toggle('hidden', tab !== name);
   });
   if (name === 'assets') renderV3Assets();
+  if (name === 'captions') renderV3Captions();
+  if (name === 'render') renderV3Render();
 }
 
 function wireV3Events() {
@@ -1608,6 +1736,35 @@ function wireV3Events() {
       setRenderMsg(err.message, true);
     }
   });
+
+  // Captions tab: + Add phrase, remove phrase
+  $('v3-tab-captions').addEventListener('click', (e) => {
+    const action = e.target.closest('[data-action]');
+    if (!action) return;
+    const scene = state.scenes[state.v3Index];
+    if (!scene) return;
+    if (action.dataset.action === 'add-phrase') {
+      const phrases = (scene.caption_phrases || []).slice();
+      const last = phrases[phrases.length - 1];
+      const newPhrase = {
+        text: '',
+        role: 'display',
+        time_in: last ? (last.time_out || last.time_in || 0) : 0,
+        time_out: last ? ((last.time_out || last.time_in || 0) + 3) : 3,
+      };
+      phrases.push(newPhrase);
+      scene.caption_phrases = phrases;
+      renderV3Captions();
+      debounceSaveCaptions();
+    } else if (action.dataset.action === 'remove-phrase') {
+      const idx = Number(action.dataset.idx);
+      if (Number.isFinite(idx)) {
+        scene.caption_phrases = (scene.caption_phrases || []).filter((_, i) => i !== idx);
+        renderV3Captions();
+        debounceSaveCaptions();
+      }
+    }
+  });
 }
 
 // ── Assets tab ──
@@ -1700,6 +1857,255 @@ function hideUndoToast() {
     state.undoTimeout = null;
   }
   state.undoSceneId = null;
+}
+
+// ── Captions tab (v1.1.3) ──
+
+let _saveCaptionsTimer = null;
+
+function debounceSaveCaptions() {
+  if (_saveCaptionsTimer) clearTimeout(_saveCaptionsTimer);
+  _saveCaptionsTimer = setTimeout(saveV3Captions, 500);
+}
+
+async function saveV3Captions() {
+  const scene = state.scenes[state.v3Index];
+  if (!scene) return;
+  const container = $('v3-tab-captions');
+  const phrases = [];
+  container.querySelectorAll('.caption-card').forEach((card) => {
+    const get = (field) => {
+      const el = card.querySelector(`[data-field="${field}"]`);
+      return el ? el.value : '';
+    };
+    const num = (s, fallback) => {
+      const n = parseFloat(s);
+      return Number.isFinite(n) ? n : fallback;
+    };
+    const role = get('role') || 'display';
+    const obj = {
+      text: get('text'),
+      role: role,
+      time_in: num(get('time_in'), 0),
+      time_out: num(get('time_out'), 0),
+    };
+    if (role === 'body') {
+      const fs = parseInt(get('font_size'), 10);
+      if (Number.isFinite(fs)) obj.font_size = fs;
+    }
+    phrases.push(obj);
+  });
+  const status = $('captions-save-status');
+  if (status) { status.textContent = 'saving…'; }
+  try {
+    await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene.id, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caption_phrases: phrases }),
+    });
+    scene.caption_phrases = phrases;
+    if (status) {
+      status.textContent = 'saved ✓';
+      setTimeout(() => { if (status.textContent === 'saved ✓') status.innerHTML = '&nbsp;'; }, 1500);
+    }
+  } catch (err) {
+    if (status) status.textContent = 'save failed: ' + err.message;
+  }
+}
+
+function renderV3Captions() {
+  const container = $('v3-tab-captions');
+  const scene = state.scenes[state.v3Index];
+  if (!scene) {
+    container.innerHTML = '<div class="captions-editor"><div class="empty">No scene selected</div></div>';
+    return;
+  }
+  const phrases = scene.caption_phrases || [];
+
+  if (!phrases.length) {
+    container.innerHTML =
+      '<div class="captions-editor">' +
+        '<div style="margin-bottom:8px;font-size:11px;color:var(--text-muted)" id="captions-save-status">&nbsp;</div>' +
+        '<div class="empty" style="margin-bottom:16px">No captions yet. Add your first phrase below.</div>' +
+        '<button class="btn primary" data-action="add-phrase">+ Add phrase</button>' +
+      '</div>';
+    return;
+  }
+
+  const cardsHtml = phrases.map((p, i) => {
+    const wordCount = (p.text || '').trim() ? (p.text || '').trim().split(/\s+/).length : 0;
+    const estDuration = (wordCount * 0.15).toFixed(1);
+    const showFontSize = p.role === 'body';
+    const safe = (s) => escHtml(s == null ? '' : String(s));
+    return '' +
+    '<div class="caption-card" data-idx="' + i + '">' +
+      '<div class="caption-card-fields">' +
+        '<div class="field caption-card-text">' +
+          '<label class="field-label">Text</label>' +
+          '<input type="text" value="' + safe(p.text) + '" data-idx="' + i + '" data-field="text" placeholder="Caption text...">' +
+        '</div>' +
+        '<div class="field caption-card-role">' +
+          '<label class="field-label">Role</label>' +
+          '<select data-idx="' + i + '" data-field="role">' +
+            '<option value="display"' + (p.role === 'display' ? ' selected' : '') + '>Display</option>' +
+            '<option value="body"' + (p.role === 'body' ? ' selected' : '') + '>Body</option>' +
+          '</select>' +
+        '</div>' +
+        '<div class="field caption-card-time">' +
+          '<label class="field-label">In</label>' +
+          '<input type="number" value="' + safe(p.time_in) + '" step="0.5" min="0" data-idx="' + i + '" data-field="time_in" placeholder="0.0">' +
+        '</div>' +
+        '<div class="field caption-card-time">' +
+          '<label class="field-label">Out</label>' +
+          '<input type="number" value="' + safe(p.time_out) + '" step="0.5" min="0" data-idx="' + i + '" data-field="time_out" placeholder="0.0">' +
+        '</div>' +
+        '<div class="field caption-card-fs' + (showFontSize ? '' : ' hidden') + '">' +
+          '<label class="field-label">Font</label>' +
+          '<input type="number" value="' + safe(p.font_size) + '" step="1" min="1" placeholder="56" data-idx="' + i + '" data-field="font_size">' +
+        '</div>' +
+      '</div>' +
+      '<div class="caption-timing-estimate">(est. ~' + estDuration + 's)</div>' +
+      '<button class="btn" style="color:var(--red);border-color:var(--red);margin-top:8px" data-action="remove-phrase" data-idx="' + i + '">✕ Remove</button>' +
+    '</div>';
+  }).join('');
+
+  container.innerHTML =
+    '<div class="captions-editor">' +
+      '<div style="margin-bottom:8px;font-size:11px;color:var(--text-muted)" id="captions-save-status">&nbsp;</div>' +
+      cardsHtml +
+      '<button class="btn primary" data-action="add-phrase">+ Add phrase</button>' +
+    '</div>';
+
+  // Wire input change → debounced save
+  container.querySelectorAll('input[data-field], select[data-field]').forEach((el) => {
+    el.addEventListener('input', debounceSaveCaptions);
+    el.addEventListener('change', debounceSaveCaptions);
+  });
+  // Wire role change → toggle font-size visibility inline
+  container.querySelectorAll('select[data-field="role"]').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      const idx = sel.dataset.idx;
+      const card = container.querySelector(`.caption-card[data-idx="${idx}"]`);
+      if (!card) return;
+      const fs = card.querySelector('.caption-card-fs');
+      if (fs) fs.classList.toggle('hidden', sel.value !== 'body');
+    });
+  });
+}
+
+// ── Render tab (v1.1.4) ──
+
+const RENDER_PRESETS = [
+  'drift_left', 'drift_right', 'zoom_in',
+  'push_in_left', 'push_in_right', 'parallax_lr', 'parallax_rl',
+];
+
+let _v3RenderState = {
+  quality: 'draft',
+  motion_override: '',     // empty = use scene's preset
+  rendering: false,
+  last_path: '',
+};
+
+function renderV3Render() {
+  const container = $('v3-tab-render');
+  const scene = state.scenes[state.v3Index];
+  if (!scene) {
+    container.innerHTML = '<div class="render-editor"><div class="empty">No scene selected</div></div>';
+    return;
+  }
+
+  const presetsOptions = RENDER_PRESETS.map((p) =>
+    '<option value="' + p + '"' + (_v3RenderState.motion_override === p ? ' selected' : '') + '>' + p + '</option>'
+  ).join('');
+
+  const videoHtml = _v3RenderState.last_path
+    ? '<video controls preload="metadata" src="/projects/' + encodeURIComponent(state.slug) + '/renders/' + _v3RenderState.last_path + '"></video>'
+    : '<div class="empty">No render yet. Click Re-render below.</div>';
+
+  const metaHtml = _v3RenderState.last_path
+    ? '<div class="render-meta">File: <code>projects/' + escHtml(state.slug) + '/renders/' + escHtml(_v3RenderState.last_path) + '</code></div>'
+    : '';
+
+  container.innerHTML =
+    '<div class="render-editor">' +
+      '<div class="render-toolbar">' +
+        '<label>Quality</label>' +
+        '<select id="render-quality">' +
+          '<option value="draft"' + (_v3RenderState.quality === 'draft' ? ' selected' : '') + '>draft</option>' +
+          '<option value="high"' + (_v3RenderState.quality === 'high' ? ' selected' : '') + '>high</option>' +
+        '</select>' +
+        '<label>Motion</label>' +
+        '<select id="render-motion">' +
+          '<option value="">(scene default: ' + escHtml(scene.motion_preset || 'drift_left') + ')</option>' +
+          presetsOptions +
+        '</select>' +
+        '<button class="btn primary" id="render-go-btn" ' + (_v3RenderState.rendering ? 'disabled' : '') + '>' +
+          (_v3RenderState.rendering ? '⟳ Rendering…' : 'Re-render this scene') +
+        '</button>' +
+        (_v3RenderState.last_path
+          ? '<button class="btn" id="render-download-btn">Download</button>' +
+            '<button class="btn" id="render-delete-btn" style="color:var(--red)">Delete</button>'
+          : '') +
+      '</div>' +
+      '<div class="render-preview">' + videoHtml + '</div>' +
+      metaHtml +
+      '<div class="render-footer-note">This is per-scene preview. The full project render (footer) does the final concat.</div>' +
+    '</div>';
+
+  // Wire
+  $('render-quality').addEventListener('change', (e) => { _v3RenderState.quality = e.target.value; });
+  $('render-motion').addEventListener('change', (e) => { _v3RenderState.motion_override = e.target.value; });
+  $('render-go-btn').addEventListener('click', () => v3RenderGo(scene));
+  if (_v3RenderState.last_path) {
+    $('render-download-btn').addEventListener('click', () => {
+      window.open('/projects/' + encodeURIComponent(state.slug) + '/renders/' + _v3RenderState.last_path, '_blank');
+    });
+    $('render-delete-btn').addEventListener('click', () => v3RenderDelete(scene));
+  }
+}
+
+async function v3RenderGo(scene) {
+  if (_v3RenderState.rendering) return;
+  _v3RenderState.rendering = true;
+  renderV3Render();
+  try {
+    const body = {
+      quality: _v3RenderState.quality,
+      motion_override: _v3RenderState.motion_override || null,
+    };
+    const data = await api(
+      '/api/project/' + encodeURIComponent(state.slug) +
+      '/storyboard/' + scene.id + '/render-scene',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+    );
+    if (data && data.path) {
+      // path is "renders/scene-NN.mp4" — extract just the filename
+      const parts = data.path.split('/');
+      _v3RenderState.last_path = parts[parts.length - 1];
+    }
+    setRenderMsg('Rendered scene ' + scene.id);
+  } catch (err) {
+    setRenderMsg('Render failed: ' + err.message, true);
+  } finally {
+    _v3RenderState.rendering = false;
+    renderV3Render();
+  }
+}
+
+async function v3RenderDelete(scene) {
+  try {
+    await api(
+      '/api/project/' + encodeURIComponent(state.slug) +
+      '/storyboard/' + scene.id + '/render-scene/delete',
+      { method: 'POST' }
+    );
+    _v3RenderState.last_path = '';
+    setRenderMsg('Render deleted');
+    renderV3Render();
+  } catch (err) {
+    setRenderMsg('Delete failed: ' + err.message, true);
+  }
 }
 
 // ── Init ──
