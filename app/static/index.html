@@ -827,6 +827,8 @@
     height: 28px; flex-shrink: 0; position: relative; overflow: hidden;
     background: var(--surface); border-bottom: 1px solid var(--border);
     cursor: default;
+    padding-left: 60px;
+    box-sizing: content-box;
   }
   .timeline-ruler-tick {
     position: absolute; bottom: 4px; font-size: 9px; color: var(--text-muted);
@@ -951,6 +953,162 @@
   }
   .pane-script {
     transition: width 0.25s ease, min-width 0.25s ease;
+  }
+
+  /* ── T6 Timeline interactive additions ── */
+  .timeline-shell {
+    display: flex;
+    flex-direction: row;
+    height: 100%;
+    overflow: hidden;
+  }
+  .timeline-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+  }
+  .timeline-props-resizer {
+    width: 5px;
+    background: transparent;
+    cursor: ew-resize;
+    flex-shrink: 0;
+    z-index: 10;
+  }
+  .timeline-props-resizer:hover {
+    background: rgba(201, 160, 58, 0.3);
+  }
+  .timeline-props {
+    width: 300px;
+    flex-shrink: 0;
+    border-left: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-size: 12px;
+  }
+  .timeline-props-header {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    background: var(--bg);
+  }
+  .timeline-props-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+  }
+  .timeline-props .field {
+    margin-bottom: 8px;
+  }
+  .timeline-props .field-label {
+    display: block;
+    font-size: 9px;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+  }
+  .timeline-props input[type="number"],
+  .timeline-props select {
+    width: 100%;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-size: 11px;
+  }
+  .timeline-props input:focus,
+  .timeline-props select:focus {
+    border-color: var(--accent);
+    outline: none;
+  }
+  .timeline-props .danger {
+    color: var(--red);
+    border-color: var(--red);
+  }
+  .timeline-trim-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    background: rgba(255, 255, 255, 0.2);
+    z-index: 5;
+    opacity: 0.5;
+    transition: background 0.1s, opacity 0.1s;
+  }
+  .timeline-trim-handle:hover {
+    background: var(--accent);
+    opacity: 0.9;
+  }
+  .timeline-trim-left { left: 0; cursor: ew-resize; }
+  .timeline-trim-right { right: 0; cursor: ew-resize; }
+  .timeline-block {
+    position: absolute;
+    top: 6px;
+    bottom: 6px;
+    background: var(--accent-dim);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    overflow: hidden;
+    cursor: grab;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    font-size: 10px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .timeline-block.approved {
+    border-color: var(--green);
+    background: rgba(79, 195, 90, 0.15);
+  }
+  .timeline-block.dragging {
+    opacity: 0.7;
+    cursor: grabbing;
+    z-index: 20;
+  }
+  .timeline-block.selected {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+    z-index: 15;
+  }
+  .timeline-bin-thumb {
+    cursor: grab;
+  }
+  .timeline-tracks.drag-over {
+    outline: 1px dashed var(--accent);
+    outline-offset: -2px;
+  }
+  .timeline-captions-section {
+    margin-top: 12px;
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+  }
+  .timeline-captions-header {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
+    cursor: default;
+  }
+  .timeline-caption-phrase input,
+  .timeline-caption-phrase select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 2px 4px;
+    font-size: 10px;
   }
 </style>
 </head>
@@ -1181,6 +1339,20 @@ function connectSSE() {
           setRenderMsg(`Scene ${sceneId}: image ready`);
         }
         reloadCurrent(data.slug);
+        break;
+      case 'timeline-updated':
+        // Special handling for T6: only refresh local _timelineAssets for current scene if not dirty.
+        // Non-current or dirty: ignore (protects in-progress edits; bin may lag slightly until reload).
+        if (Number.isFinite(sceneId)) {
+          const cur = state.scenes[state.v3Index];
+          if (cur && cur.id === sceneId) {
+            if (_timelineDirty) {
+              // keep local pending edits; do not clobber
+            } else {
+              refreshTimelineFromServer(sceneId);
+            }
+          }
+        }
         break;
       default:
         // refresh, scene-approved, storyboard-updated, script-updated, render-queued
@@ -2035,6 +2207,14 @@ function renderV3Captions() {
 
 // ── Timeline tab ──
 let _timelineZoom = 1.0;
+let _timelineAssets = null;
+let _timelineDirty = false;
+let _saveTimelineTimer = null;
+let _selectedAssetIndex = null;
+let _currentPxPerSec = 40;
+let _lastTimelineSceneId = null;
+let _dragState = null;
+let _trimTooltip = null;
 
 function timelineZoom(factor) {
   _timelineZoom = Math.max(0.25, Math.min(4.0, _timelineZoom * factor));
@@ -2044,6 +2224,105 @@ function timelineZoom(factor) {
 function timelineZoomFit() {
   _timelineZoom = 1.0;
   renderV3Timeline();
+}
+
+function normalizeAsset(a) {
+  if (!a) return;
+  if (a.time_in == null) a.time_in = 0;
+  if (a.duration_secs == null || a.duration_secs <= 0) a.duration_secs = 5;
+  if (a.layer == null) a.layer = 0;
+  if (!Array.isArray(a.caption_phrases)) a.caption_phrases = [];
+  if (a.blend_mode == null) a.blend_mode = 'normal';
+  if (a.opacity == null) a.opacity = 1.0;
+}
+
+function computeTimelineTotalDuration(assets, scene) {
+  let max = 10;
+  const sceneDur = (scene && scene.time_in != null && scene.time_out != null)
+    ? (parseFloat(scene.time_out) - parseFloat(scene.time_in)) : 0;
+  if (sceneDur > max) max = sceneDur;
+  (assets || []).forEach(function(a) {
+    const end = (a.time_in || 0) + (a.duration_secs || 0);
+    if (end > max) max = end;
+  });
+  return max;
+}
+
+function computeSnapped(value, pxPerSec, excludeIndex) {
+  if (!Number.isFinite(value)) value = 0;
+  const scene = state.scenes[state.v3Index];
+  const assets = _timelineAssets || [];
+  const totalD = computeTimelineTotalDuration(assets, scene);
+  const candidates = [];
+  for (let t = 0; t <= Math.ceil(totalD) + 2; t++) {
+    candidates.push(t);
+  }
+  (assets || []).forEach(function(a, i) {
+    if (i === excludeIndex) return;
+    const tin = (a.time_in != null) ? a.time_in : 0;
+    const td = a.duration_secs || 0;
+    candidates.push(tin);
+    candidates.push(tin + td);
+  });
+  candidates.push(0);
+  if (totalD > 0) candidates.push(totalD);
+  let best = value;
+  let bestDist = Infinity;
+  const threshold = 10 / pxPerSec;
+  for (let ci = 0; ci < candidates.length; ci++) {
+    const c = candidates[ci];
+    const d = Math.abs(c - value);
+    if (d <= threshold && d < bestDist) {
+      bestDist = d;
+      best = c;
+    }
+  }
+  return Number(best.toFixed(2));
+}
+
+function markTimelineDirty() {
+  _timelineDirty = true;
+  if (_saveTimelineTimer) clearTimeout(_saveTimelineTimer);
+  _saveTimelineTimer = setTimeout(saveV3Timeline, 500);
+}
+
+async function saveV3Timeline() {
+  const scene = state.scenes[state.v3Index];
+  if (!scene || !_timelineAssets) return;
+  try {
+    await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene.id + '/timeline', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ asset_timeline: _timelineAssets }),
+    });
+    scene.asset_timeline = JSON.parse(JSON.stringify(_timelineAssets));
+    _timelineDirty = false;
+    const sts = document.querySelector('.timeline-props-header .save-status');
+    if (sts) {
+      sts.textContent = '✓';
+      setTimeout(function() { if (sts && sts.textContent === '✓') sts.textContent = ''; }, 1200);
+    }
+  } catch (err) {
+    setRenderMsg('Timeline save failed: ' + err.message, true);
+    const sts = document.querySelector('.timeline-props-header .save-status');
+    if (sts) sts.textContent = 'err';
+  }
+}
+
+async function refreshTimelineFromServer(sceneId) {
+  try {
+    const data = await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + sceneId + '/timeline');
+    const curScene = state.scenes[state.v3Index];
+    if (curScene && curScene.id === sceneId && data && Array.isArray(data.asset_timeline)) {
+      curScene.asset_timeline = data.asset_timeline;
+      if (!_timelineDirty) {
+        _timelineAssets = JSON.parse(JSON.stringify(data.asset_timeline));
+        _timelineAssets.forEach(normalizeAsset);
+        _selectedAssetIndex = null;
+        renderV3Timeline();
+      }
+    }
+  } catch (e) { /* ignore */ }
 }
 
 function buildTimelineBin(currentAssets) {
@@ -2079,6 +2358,405 @@ function buildTimelineBin(currentAssets) {
     '</div>';
 }
 
+function buildCaptionsSubEditor(asset, ai) {
+  const phrases = (asset && asset.caption_phrases) || [];
+  if (!phrases.length) {
+    return '<div style="font-size:10px;color:var(--text-muted);margin:4px 0;">No captions for this asset.</div>';
+  }
+  const safe = function(s) { return escHtml(s == null ? '' : String(s)); };
+  let html = '';
+  for (let pi = 0; pi < phrases.length; pi++) {
+    const p = phrases[pi];
+    html += '' +
+      '<div class="timeline-caption-phrase" data-phrase-idx="' + pi + '" style="border:1px solid var(--border);border-radius:4px;padding:6px;margin-bottom:6px;font-size:10px;">' +
+        '<div style="display:flex;gap:4px;margin-bottom:4px;">' +
+          '<input type="text" value="' + safe(p.text) + '" data-phrase-field="text" style="flex:1;font-size:10px;" placeholder="text">' +
+          '<select data-phrase-field="role" style="width:70px;font-size:10px;">' +
+            '<option value="display"' + (p.role === 'display' ? ' selected' : '') + '>display</option>' +
+            '<option value="body"' + (p.role === 'body' ? ' selected' : '') + '>body</option>' +
+          '</select>' +
+        '</div>' +
+        '<div style="display:flex;gap:4px;align-items:center;">' +
+          '<label style="font-size:9px;color:var(--text-muted)">in</label>' +
+          '<input type="number" step="0.1" value="' + safe(p.time_in) + '" data-phrase-field="time_in" style="width:55px;font-size:10px;">' +
+          '<label style="font-size:9px;color:var(--text-muted)">out</label>' +
+          '<input type="number" step="0.1" value="' + safe(p.time_out) + '" data-phrase-field="time_out" style="width:55px;font-size:10px;">' +
+          '<button class="btn" style="padding:1px 4px;font-size:9px;color:var(--red)" data-action="remove-phrase" data-phrase-idx="' + pi + '">✕</button>' +
+        '</div>' +
+      '</div>';
+  }
+  return html;
+}
+
+function buildTimelinePropsHtml() {
+  if (!_timelineAssets || _selectedAssetIndex == null || !_timelineAssets[_selectedAssetIndex]) {
+    return '' +
+      '<div class="timeline-props">' +
+        '<div class="timeline-props-header">' +
+          '<span>Properties</span>' +
+          '<span class="save-status" style="margin-left:auto;font-size:10px;color:var(--text-muted)"></span>' +
+        '</div>' +
+        '<div class="timeline-props-body">' +
+          '<div class="empty" style="padding:12px;font-size:11px;color:var(--text-muted)">Select an asset block to edit its properties, timing, motion, and captions.</div>' +
+        '</div>' +
+      '</div>';
+  }
+  const ai = _selectedAssetIndex;
+  const a = _timelineAssets[ai];
+  const safe = function(s) { return escHtml(s == null ? '' : String(s)); };
+  const timeIn = (a.time_in || 0);
+  const dur = (a.duration_secs || 5);
+  const timeOut = timeIn + dur;
+  const opPct = Math.round(((a.opacity != null ? a.opacity : 1) * 100));
+  const blend = a.blend_mode || 'normal';
+  const motion = a.motion_preset || 'none';
+  const layer = (a.layer != null ? a.layer : 0);
+  const pathLabel = a.path ? a.path.split('/').pop() : ('asset-' + ai);
+  let html = '' +
+    '<div class="timeline-props" data-ai="' + ai + '">' +
+      '<div class="timeline-props-header">' +
+        '<span>Asset ' + ai + ' — ' + escHtml(pathLabel) + '</span>' +
+        '<span class="save-status" style="margin-left:auto;font-size:10px;color:var(--text-muted)"></span>' +
+        '<button class="btn btn-icon" data-action="close-props" title="Close">✕</button>' +
+      '</div>' +
+      '<div class="timeline-props-body">' +
+        '<div class="field"><label class="field-label">time_in (s)</label><input type="number" step="0.1" min="0" value="' + safe(timeIn) + '" data-prop="time_in"></div>' +
+        '<div class="field"><label class="field-label">time_out (s)</label><span data-prop="time_out" style="font-family:var(--font-mono);font-size:12px;">' + timeOut.toFixed(2) + '</span></div>' +
+        '<div class="field"><label class="field-label">duration_secs</label><input type="number" step="0.1" min="0.1" value="' + safe(dur) + '" data-prop="duration_secs"></div>' +
+        '<div class="field"><label class="field-label">layer</label><select data-prop="layer">' +
+          '<option value="0"' + (layer===0?' selected':'') + '>L0</option>' +
+          '<option value="1"' + (layer===1?' selected':'') + '>L1</option>' +
+          '<option value="2"' + (layer===2?' selected':'') + '>L2</option>' +
+          '<option value="3"' + (layer===3?' selected':'') + '>L3</option>' +
+          '<option value="4"' + (layer===4?' selected':'') + '>L4</option>' +
+        '</select></div>' +
+        '<div class="field"><label class="field-label">blend_mode</label><select data-prop="blend_mode">' +
+          '<option value="normal"' + (blend==='normal'?' selected':'') + '>normal</option>' +
+          '<option value="multiply"' + (blend==='multiply'?' selected':'') + '>multiply</option>' +
+          '<option value="screen"' + (blend==='screen'?' selected':'') + '>screen</option>' +
+          '<option value="overlay"' + (blend==='overlay'?' selected':'') + '>overlay</option>' +
+          '<option value="darken"' + (blend==='darken'?' selected':'') + '>darken</option>' +
+          '<option value="lighten"' + (blend==='lighten'?' selected':'') + '>lighten</option>' +
+          '<option value="color-dodge"' + (blend==='color-dodge'?' selected':'') + '>color-dodge</option>' +
+          '<option value="color-burn"' + (blend==='color-burn'?' selected':'') + '>color-burn</option>' +
+          '<option value="hard-light"' + (blend==='hard-light'?' selected':'') + '>hard-light</option>' +
+          '<option value="soft-light"' + (blend==='soft-light'?' selected':'') + '>soft-light</option>' +
+          '<option value="difference"' + (blend==='difference'?' selected':'') + '>difference</option>' +
+          '<option value="exclusion"' + (blend==='exclusion'?' selected':'') + '>exclusion</option>' +
+        '</select></div>' +
+        '<div class="field"><label class="field-label">opacity</label>' +
+          '<div style="display:flex;gap:8px;align-items:center">' +
+            '<input type="range" min="0" max="100" step="1" value="' + opPct + '" data-prop="opacity-range" style="flex:1">' +
+            '<input type="number" min="0" max="100" step="1" value="' + opPct + '" data-prop="opacity-num" style="width:60px">' +
+          '</div>' +
+        '</div>' +
+        '<div class="field"><label class="field-label">motion_preset</label><select data-prop="motion_preset">' +
+          '<option value="none"' + (motion==='none'?' selected':'') + '>none</option>' +
+          '<option value="ken-burns"' + (motion==='ken-burns'?' selected':'') + '>ken-burns</option>' +
+          '<option value="pan-left"' + (motion==='pan-left'?' selected':'') + '>pan-left</option>' +
+          '<option value="pan-right"' + (motion==='pan-right'?' selected':'') + '>pan-right</option>' +
+          '<option value="tilt-up"' + (motion==='tilt-up'?' selected':'') + '>tilt-up</option>' +
+          '<option value="tilt-down"' + (motion==='tilt-down'?' selected':'') + '>tilt-down</option>' +
+          '<option value="zoom-in"' + (motion==='zoom-in'?' selected':'') + '>zoom-in</option>' +
+          '<option value="zoom-out"' + (motion==='zoom-out'?' selected':'') + '>zoom-out</option>' +
+          '<option value="parallax"' + (motion==='parallax'?' selected':'') + '>parallax</option>' +
+        '</select></div>' +
+        '<div style="margin:12px 0;">' +
+          '<button class="btn danger" data-action="remove-asset">Remove asset</button>' +
+        '</div>' +
+        '<div class="timeline-captions-section">' +
+          '<div class="timeline-captions-header">Captions <span style="float:right;font-size:10px;">' + ((a.caption_phrases||[]).length) + '</span></div>' +
+          '<div class="timeline-captions-body">' +
+            buildCaptionsSubEditor(a, ai) +
+            '<button class="btn" style="margin-top:6px;font-size:11px" data-action="add-caption">+ Add caption phrase</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  return html;
+}
+
+function applyPropChange(ai, prop, val, propsRoot) {
+  if (!_timelineAssets || !_timelineAssets[ai]) return;
+  const asset = _timelineAssets[ai];
+  let changedPos = false;
+  let numVal;
+  if (prop === 'time_in') {
+    numVal = parseFloat(val);
+    if (Number.isFinite(numVal)) {
+      asset.time_in = Math.max(0, Number(numVal.toFixed(2)));
+      changedPos = true;
+    }
+  } else if (prop === 'duration_secs') {
+    numVal = parseFloat(val);
+    if (Number.isFinite(numVal)) {
+      asset.duration_secs = Math.max(0.1, Number(numVal.toFixed(2)));
+      changedPos = true;
+    }
+  } else if (prop === 'layer') {
+    numVal = parseInt(val, 10);
+    if (Number.isFinite(numVal)) asset.layer = Math.max(0, Math.min(4, numVal));
+  } else if (prop === 'blend_mode') {
+    asset.blend_mode = val || 'normal';
+  } else if (prop === 'motion_preset') {
+    asset.motion_preset = (val === 'none' || !val) ? null : val;
+  } else if (prop === 'opacity-range' || prop === 'opacity-num') {
+    numVal = parseFloat(val);
+    if (Number.isFinite(numVal)) {
+      asset.opacity = Math.max(0, Math.min(1, numVal / 100));
+    }
+  }
+  markTimelineDirty();
+  if (changedPos) {
+    const px = _currentPxPerSec;
+    const block = document.querySelector('.timeline-block[data-asset-index="' + ai + '"]');
+    if (block) {
+      block.style.left = ((asset.time_in || 0) * px) + 'px';
+      block.style.width = ((asset.duration_secs || 0) * px) + 'px';
+    }
+    const toSpan = propsRoot ? propsRoot.querySelector('[data-prop="time_out"]') : null;
+    if (toSpan) {
+      toSpan.textContent = ((asset.time_in || 0) + (asset.duration_secs || 0)).toFixed(2);
+    }
+  } else if (prop === 'layer') {
+    renderV3Timeline();
+    return;
+  }
+}
+
+function wireTimelineCaptions(propsRoot, ai) {
+  const asset = _timelineAssets ? _timelineAssets[ai] : null;
+  if (!asset) return;
+  const addBtn = propsRoot.querySelector('[data-action="add-caption"]');
+  if (addBtn) {
+    addBtn.addEventListener('click', function() {
+      if (!asset.caption_phrases) asset.caption_phrases = [];
+      asset.caption_phrases.push({ text: '', role: 'display', time_in: 0, time_out: 1 });
+      markTimelineDirty();
+      renderV3Timeline();
+    });
+  }
+  const phrasesEls = propsRoot.querySelectorAll('.timeline-caption-phrase');
+  for (let i = 0; i < phrasesEls.length; i++) {
+    const phraseEl = phrasesEls[i];
+    const pi = Number(phraseEl.dataset.phraseIdx);
+    if (!Number.isFinite(pi)) continue;
+    const ph = asset.caption_phrases[pi];
+    if (!ph) continue;
+    const fields = phraseEl.querySelectorAll('input[data-phrase-field], select[data-phrase-field]');
+    for (let f = 0; f < fields.length; f++) {
+      const inp = fields[f];
+      const fieldName = inp.dataset.phraseField;
+      inp.addEventListener('input', function() {
+        let v = inp.value;
+        if (fieldName === 'time_in' || fieldName === 'time_out') {
+          const n = parseFloat(v);
+          v = Number.isFinite(n) ? Number(n.toFixed(2)) : 0;
+        }
+        ph[fieldName] = v;
+        markTimelineDirty();
+      });
+      inp.addEventListener('change', function() { markTimelineDirty(); });
+    }
+    const remBtn = phraseEl.querySelector('[data-action="remove-phrase"]');
+    if (remBtn) {
+      remBtn.addEventListener('click', function() {
+        asset.caption_phrases.splice(pi, 1);
+        markTimelineDirty();
+        renderV3Timeline();
+      });
+    }
+  }
+}
+
+function wireTimelineProps(root) {
+  const props = root.querySelector('.timeline-props');
+  if (!props) return;
+  const aiAttr = props.dataset.ai;
+  const ai = (aiAttr != null) ? Number(aiAttr) : _selectedAssetIndex;
+  if (ai == null || !_timelineAssets || !_timelineAssets[ai]) return;
+  const close = props.querySelector('[data-action="close-props"]');
+  if (close) {
+    close.addEventListener('click', function() {
+      _selectedAssetIndex = null;
+      renderV3Timeline();
+    });
+  }
+  const rem = props.querySelector('[data-action="remove-asset"]');
+  if (rem) {
+    rem.addEventListener('click', function() {
+      _timelineAssets.splice(ai, 1);
+      _selectedAssetIndex = null;
+      markTimelineDirty();
+      renderV3Timeline();
+    });
+  }
+  const fields = props.querySelectorAll('input[data-prop], select[data-prop]');
+  for (let i = 0; i < fields.length; i++) {
+    const el = fields[i];
+    const prop = el.dataset.prop;
+    el.addEventListener('input', function() { applyPropChange(ai, prop, el.value, props); });
+    el.addEventListener('change', function() { applyPropChange(ai, prop, el.value, props); });
+  }
+  const range = props.querySelector('[data-prop="opacity-range"]');
+  const numi = props.querySelector('[data-prop="opacity-num"]');
+  if (range && numi) {
+    range.addEventListener('input', function() { numi.value = range.value; });
+    numi.addEventListener('input', function() { range.value = numi.value; });
+  }
+  wireTimelineCaptions(props, ai);
+}
+
+function createTrimTooltip() {
+  if (_trimTooltip) return _trimTooltip;
+  const tip = document.createElement('div');
+  tip.style.position = 'fixed';
+  tip.style.background = 'var(--surface)';
+  tip.style.border = '1px solid var(--border)';
+  tip.style.borderRadius = '4px';
+  tip.style.padding = '2px 6px';
+  tip.style.fontSize = '10px';
+  tip.style.fontFamily = 'var(--font-mono)';
+  tip.style.color = 'var(--text)';
+  tip.style.pointerEvents = 'none';
+  tip.style.zIndex = '1000';
+  tip.style.boxShadow = '0 2px 6px rgba(0,0,0,0.4)';
+  document.body.appendChild(tip);
+  _trimTooltip = tip;
+  return tip;
+}
+
+function updateTrimTooltip(block, dur, clientX, mode) {
+  const tip = createTrimTooltip();
+  tip.textContent = (dur || 0).toFixed(2) + 's';
+  const rect = block.getBoundingClientRect();
+  let left = clientX + 12;
+  if (mode === 'trim-left') left = clientX - 40;
+  tip.style.left = left + 'px';
+  tip.style.top = (rect.top - 22) + 'px';
+  tip.style.display = 'block';
+}
+
+function hideTrimTooltip() {
+  if (_trimTooltip) _trimTooltip.style.display = 'none';
+}
+
+function startDragTimeline(evt, blockEl, ai, mode, side) {
+  evt.preventDefault();
+  const asset = _timelineAssets[ai];
+  if (!asset) return;
+  const pxPerSec = _currentPxPerSec;
+  const labelColW = 60;
+  const inner = document.querySelector('.timeline-tracks-inner') || document.querySelector('.timeline-tracks');
+  let timeZeroClientX = 0;
+  if (inner) {
+    const r = inner.getBoundingClientRect();
+    timeZeroClientX = r.left + labelColW;
+  }
+  _dragState = {
+    ai: ai,
+    mode: mode,
+    side: side,
+    startClientX: evt.clientX,
+    origTimeIn: (asset.time_in != null ? asset.time_in : 0),
+    origDur: (asset.duration_secs != null ? asset.duration_secs : 5),
+    pxPerSec: pxPerSec,
+    labelColW: labelColW,
+    timeZeroClientX: timeZeroClientX
+  };
+  blockEl.classList.add('dragging');
+  try { blockEl.setPointerCapture(evt.pointerId); } catch (e) {}
+  function onPointerMove(moveEvt) {
+    handleDragMove(moveEvt);
+  }
+  function onPointerUp(upEvt) {
+    cleanupDrag();
+    commitDrag(upEvt);
+  }
+  function cleanupDrag() {
+    document.removeEventListener('pointermove', onPointerMove);
+    document.removeEventListener('pointerup', onPointerUp);
+    document.removeEventListener('pointercancel', onPointerUp);
+    if (blockEl) blockEl.classList.remove('dragging');
+    hideTrimTooltip();
+    _dragState = null;
+  }
+  document.addEventListener('pointermove', onPointerMove);
+  document.addEventListener('pointerup', onPointerUp);
+  document.addEventListener('pointercancel', onPointerUp);
+}
+
+function handleDragMove(moveEvt) {
+  if (!_dragState || !_timelineAssets) return;
+  const ds = _dragState;
+  const asset = _timelineAssets[ds.ai];
+  if (!asset) return;
+  const dx = moveEvt.clientX - ds.startClientX;
+  const dTime = dx / ds.pxPerSec;
+  let newTimeIn = ds.origTimeIn;
+  let newDur = ds.origDur;
+  if (ds.mode === 'move') {
+    newTimeIn = ds.origTimeIn + dTime;
+  } else if (ds.mode === 'trim-left') {
+    newTimeIn = ds.origTimeIn + dTime;
+    newDur = ds.origDur - dTime;
+  } else if (ds.mode === 'trim-right') {
+    newDur = ds.origDur + dTime;
+  }
+  if (newDur < 0.1) {
+    if (ds.mode === 'trim-left') {
+      const deltaFix = 0.1 - newDur;
+      newDur = 0.1;
+      newTimeIn = newTimeIn + deltaFix;
+    } else {
+      newDur = 0.1;
+    }
+  }
+  if (newTimeIn < 0) newTimeIn = 0;
+  let toSnap = newTimeIn;
+  if (ds.mode === 'trim-right') {
+    toSnap = newTimeIn + newDur;
+  }
+  const snapped = computeSnapped(toSnap, ds.pxPerSec, ds.ai);
+  if (ds.mode === 'move') {
+    newTimeIn = snapped;
+  } else if (ds.mode === 'trim-left') {
+    const origEnd = ds.origTimeIn + ds.origDur;
+    newTimeIn = snapped;
+    newDur = Math.max(0.1, origEnd - newTimeIn);
+  } else {
+    const newEnd = snapped;
+    newDur = Math.max(0.1, newEnd - newTimeIn);
+  }
+  asset.time_in = Number(newTimeIn.toFixed(2));
+  asset.duration_secs = Number(newDur.toFixed(2));
+  const block = document.querySelector('.timeline-block[data-asset-index="' + ds.ai + '"]');
+  if (block) {
+    block.style.left = (asset.time_in * ds.pxPerSec) + 'px';
+    block.style.width = (asset.duration_secs * ds.pxPerSec) + 'px';
+  }
+  updateTrimTooltip(block || document.body, asset.duration_secs, moveEvt.clientX, ds.mode);
+  const props = document.querySelector('.timeline-props');
+  if (props && Number(props.dataset.ai) === ds.ai) {
+    const tinEl = props.querySelector('[data-prop="time_in"]');
+    if (tinEl) tinEl.value = asset.time_in;
+    const durEl = props.querySelector('[data-prop="duration_secs"]');
+    if (durEl) durEl.value = asset.duration_secs;
+    const toEl = props.querySelector('[data-prop="time_out"]');
+    if (toEl) toEl.textContent = (asset.time_in + asset.duration_secs).toFixed(2);
+  }
+}
+
+function commitDrag(upEvt) {
+  if (!_dragState || !_timelineAssets) {
+    _dragState = null;
+    return;
+  }
+  const ai = _dragState.ai;
+  markTimelineDirty();
+  renderV3Timeline();
+}
+
 function renderV3Timeline() {
   const container = $('v3-tab-timeline');
   const scene = state.scenes[state.v3Index];
@@ -2087,20 +2765,34 @@ function renderV3Timeline() {
     return;
   }
 
-  const assets = scene.asset_timeline || [];
-  const sceneDur = (scene.time_in != null && scene.time_out != null)
-    ? parseFloat(scene.time_out) - parseFloat(scene.time_in)
-    : 0;
-  const totalDuration = Math.max(
-    ...assets.map(a => (a.duration_secs || 0)),
-    sceneDur,
-    10
-  );
+  // Init local mutable copy when entering for this scene.
+  // If dirty + same scene id: keep local edits (survive re-renders/partial reloads).
+  // Else: (re)clone from state.scenes (picks up server data after reloads) and preserve selection when possible.
+  const currentSceneId = scene.id;
+  const sceneTl = scene.asset_timeline || [];
+  const sceneChanged = (_lastTimelineSceneId !== currentSceneId);
+  if (sceneChanged || !_timelineAssets) {
+    _timelineAssets = JSON.parse(JSON.stringify(sceneTl));
+    _timelineAssets.forEach(normalizeAsset);
+    _timelineDirty = false;
+    _selectedAssetIndex = null;
+    _lastTimelineSceneId = currentSceneId;
+  } else if (!_timelineDirty) {
+    // same scene, clean: refresh from latest scene data (e.g. after other SSE reloadCurrent) but keep selection
+    const prevSel = _selectedAssetIndex;
+    _timelineAssets = JSON.parse(JSON.stringify(sceneTl));
+    _timelineAssets.forEach(normalizeAsset);
+    if (prevSel != null && prevSel < _timelineAssets.length) _selectedAssetIndex = prevSel;
+  }
+  // else: dirty + same scene -> keep _timelineAssets + selection as-is (local edits win)
 
-  // Pixels per second — zoomable
+  const assets = _timelineAssets || [];
   const pxPerSec = _timelineZoom * 40;
+  _currentPxPerSec = pxPerSec;
+  const totalDuration = computeTimelineTotalDuration(assets, scene);
   const trackAreaWidth = totalDuration * pxPerSec;
   const rulerWidth = Math.max(trackAreaWidth, 400);
+  const labelColW = 60;
 
   // Build zoom bar
   const zoomHtml =
@@ -2118,30 +2810,34 @@ function renderV3Timeline() {
       (assets.length ? ' (' + assets.length + ' assets)' : '') +
     '</div>';
 
-  // Build ruler ticks
-  let rulerHtml = '';
+  // Build ruler ticks (inside scroll area now, pad shifts alignment)
+  let rulerInner = '';
   for (let t = 0; t <= totalDuration; t++) {
     const x = t * pxPerSec;
-    rulerHtml += '<div class="timeline-ruler-mark" style="left:' + x + 'px"></div>';
-    rulerHtml += '<div class="timeline-ruler-tick" style="left:' + x + 'px">' + t + 's</div>';
+    rulerInner += '<div class="timeline-ruler-mark" style="left:' + x + 'px"></div>';
+    rulerInner += '<div class="timeline-ruler-tick" style="left:' + x + 'px">' + t + 's</div>';
   }
-  rulerHtml = '<div class="timeline-ruler" style="min-width:' + rulerWidth + 'px">' + rulerHtml + '</div>';
+  const rulerHtml = '<div class="timeline-ruler" style="min-width:' + (labelColW + trackAreaWidth) + 'px;height:28px;">' + rulerInner + '</div>';
 
-  // Build tracks (layers 0-4)
+  // Build tracks (layers 0-4) — blocks use time_in for left
   let tracksHtml = '';
   for (let layer = 0; layer <= 4; layer++) {
     let blocksHtml = '';
-    assets.forEach((a, ai) => {
+    assets.forEach(function(a, ai) {
       const assetLayer = (a.layer != null) ? a.layer : 0;
       if (assetLayer !== layer) return;
-      const startX = 0;
+      const startX = (a.time_in || 0) * pxPerSec;
       const width = (a.duration_secs || 5) * pxPerSec;
       const label = a.path ? a.path.split('/').pop().replace(/\.(jpg|png|jpeg|webp)$/i, '') : 'asset-' + ai;
+      const selCls = (_selectedAssetIndex === ai) ? ' selected' : '';
+      const apprCls = a.approved ? ' approved' : '';
       blocksHtml +=
-        '<div class="timeline-block' + (a.approved ? ' approved' : '') + '"' +
+        '<div class="timeline-block' + apprCls + selCls + '" data-asset-index="' + ai + '"' +
           ' style="left:' + startX + 'px; width:' + width + 'px"' +
-          ' title="' + escHtml(a.path || '') + ' — ' + (a.duration_secs || 0).toFixed(1) + 's">' +
+          ' title="' + escHtml(a.path || '') + ' — ' + (a.duration_secs || 0).toFixed(1) + 's @' + (a.time_in || 0).toFixed(1) + 's">' +
           escHtml(label) +
+          '<div class="timeline-trim-handle timeline-trim-left" data-side="left"></div>' +
+          '<div class="timeline-trim-handle timeline-trim-right" data-side="right"></div>' +
         '</div>';
     });
     tracksHtml +=
@@ -2152,34 +2848,186 @@ function renderV3Timeline() {
   }
 
   const tracksContainerHtml =
-    '<div class="timeline-tracks" style="overflow-x:auto">' +
-      '<div style="position:relative;min-width:' + rulerWidth + 'px;height:' + (5 * 52) + 'px">' +
-        '<div class="timeline-playhead" style="left:0px"></div>' +
-        tracksHtml +
+    '<div class="timeline-tracks">' +
+      '<div class="timeline-tracks-inner" style="position:relative;min-width:' + (labelColW + trackAreaWidth) + 'px;height:' + (28 + 5 * 52) + 'px">' +
+        rulerHtml +
+        '<div style="margin-top:28px;">' +
+          tracksHtml +
+        '</div>' +
+        '<div class="timeline-playhead" style="left:' + labelColW + 'px;top:0;height:100%"></div>' +
       '</div>' +
     '</div>';
 
-  // Build filesystem-sourced bin: show scene stills available
+  // Build bin
   const binHtml = buildTimelineBin(assets);
+
+  // Props sidebar
+  const propsHtml = buildTimelinePropsHtml();
 
   container.innerHTML =
     '<div class="timeline-shell">' +
-      zoomHtml +
-      previewHtml +
-      rulerHtml +
-      tracksContainerHtml +
-      binHtml +
+      '<div class="timeline-main">' +
+        zoomHtml +
+        previewHtml +
+        tracksContainerHtml +
+        binHtml +
+      '</div>' +
+      '<div class="timeline-props-resizer"></div>' +
+      propsHtml +
     '</div>';
 
   // Wire zoom buttons
-  container.querySelectorAll('[data-timeline-action]').forEach(btn => {
-    btn.addEventListener('click', () => {
+  container.querySelectorAll('[data-timeline-action]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
       const action = btn.dataset.timelineAction;
       if (action === 'zoom-in') timelineZoom(1.3);
       else if (action === 'zoom-out') timelineZoom(0.7);
       else if (action === 'zoom-fit') timelineZoomFit();
     });
   });
+
+  // Wire block pointer interactions (drag + select)
+  const blocks = container.querySelectorAll('.timeline-block');
+  for (let bi = 0; bi < blocks.length; bi++) {
+    const block = blocks[bi];
+    const ai = Number(block.dataset.assetIndex);
+    block.addEventListener('pointerdown', function(e) {
+      const h = e.target.closest('.timeline-trim-handle');
+      let mode = 'move';
+      let side = null;
+      if (h) {
+        side = h.dataset.side || (h.classList.contains('timeline-trim-left') ? 'left' : 'right');
+        mode = (side === 'left') ? 'trim-left' : 'trim-right';
+      }
+      startDragTimeline(e, block, ai, mode, side);
+    });
+    block.addEventListener('click', function(e) {
+      if (e.target.closest('.timeline-trim-handle')) return;
+      _selectedAssetIndex = ai;
+      renderV3Timeline();
+    });
+  }
+
+  // Deselect on empty track click
+  const tracksEl = container.querySelector('.timeline-tracks');
+  if (tracksEl) {
+    tracksEl.addEventListener('click', function(e) {
+      if (e.target.closest('.timeline-block')) return;
+      if (_selectedAssetIndex != null) {
+        _selectedAssetIndex = null;
+        renderV3Timeline();
+      }
+    });
+  }
+
+  // Wire bin thumbs for drag-from-bin (create new still)
+  const binThumbs = container.querySelectorAll('.timeline-bin-thumb');
+  for (let ti = 0; ti < binThumbs.length; ti++) {
+    const thumb = binThumbs[ti];
+    thumb.setAttribute('draggable', 'true');
+    thumb.addEventListener('dragstart', function(e) {
+      const title = thumb.getAttribute('title') || '';
+      let path = '';
+      const m = title.match(/^(.+) \(scene/);
+      if (m) path = m[1];
+      if (path) {
+        e.dataTransfer.setData('application/json', JSON.stringify({ path: path }));
+        e.dataTransfer.effectAllowed = 'copy';
+      }
+    });
+  }
+
+  // Drop target on tracks area
+  const dropTarget = container.querySelector('.timeline-tracks-inner') || container.querySelector('.timeline-tracks');
+  if (dropTarget) {
+    dropTarget.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      dropTarget.classList.add('drag-over');
+    });
+    dropTarget.addEventListener('dragleave', function() {
+      dropTarget.classList.remove('drag-over');
+    });
+    dropTarget.addEventListener('drop', function(e) {
+      e.preventDefault();
+      dropTarget.classList.remove('drag-over');
+      let path = '';
+      try {
+        const raw = e.dataTransfer.getData('application/json');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          path = parsed.path || '';
+        }
+      } catch (ex) {}
+      if (!path) return;
+      const rect = dropTarget.getBoundingClientRect();
+      let dropX = e.clientX - rect.left - 60;
+      if (dropX < 0) dropX = 0;
+      let timeIn = dropX / _currentPxPerSec;
+      timeIn = computeSnapped(timeIn, _currentPxPerSec, -1);
+      const newAsset = {
+        type: 'still',
+        layer: 0,
+        path: path,
+        approved: false,
+        duration_secs: 5.0,
+        motion_preset: null,
+        time_in: Number(timeIn.toFixed(2)),
+        caption_phrases: []
+      };
+      normalizeAsset(newAsset);
+      _timelineAssets.push(newAsset);
+      _selectedAssetIndex = _timelineAssets.length - 1;
+      markTimelineDirty();
+      renderV3Timeline();
+    });
+  }
+
+  // Wire props (fields, remove, captions, close, resizer)
+  wireTimelineProps(container);
+
+  // Props sidebar resizer (re-applied each render since DOM rebuilt)
+  const resizer = container.querySelector('.timeline-props-resizer');
+  const propsPane = container.querySelector('.timeline-props');
+  if (resizer && propsPane) {
+    const savedW = localStorage.getItem('timeline-props-width-px');
+    if (savedW) {
+      const pw = parseFloat(savedW);
+      if (pw >= 180 && pw <= 600) propsPane.style.width = pw + 'px';
+    }
+    resizer.addEventListener('mousedown', function(de) {
+      de.preventDefault();
+      const startX = de.clientX;
+      const startW = propsPane.getBoundingClientRect().width;
+      function onMove(me) {
+        const delta = me.clientX - startX;
+        let nw = startW - delta;
+        nw = Math.max(180, Math.min(520, nw));
+        propsPane.style.width = nw + 'px';
+      }
+      function onUp() {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        localStorage.setItem('timeline-props-width-px', String(Math.round(propsPane.getBoundingClientRect().width)));
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  }
+
+  // Esc to deselect (guard to wire once)
+  if (!renderV3Timeline._keysWired) {
+    renderV3Timeline._keysWired = true;
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        const ttab = $('v3-tab-timeline');
+        if (ttab && !ttab.classList.contains('hidden') && _selectedAssetIndex != null) {
+          _selectedAssetIndex = null;
+          renderV3Timeline();
+        }
+      }
+    });
+  }
 }
 
 // ── Script pane resizer (draggable right edge) ──
