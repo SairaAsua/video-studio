@@ -17,8 +17,8 @@ complex -filter_complex graph: each scene is independent, can be
 inspected individually, and concat with -c copy is trivial.
 
 Usage:
-    python lib/assemble.py <project-slug> [--quality draft|high]
-    python lib/assemble.py <project-slug> --scene <id>  # render single scene for preview
+    python lib/assemble.py <project-slug> [--quality draft|high] [--debug-filter]
+    python lib/assemble.py <project-slug> --scene <id> [--debug-filter]  # render single scene for preview
 """
 
 import json
@@ -60,74 +60,160 @@ def _strip_filter_for_audio_check(audio_path: Path, duration: float) -> list:
 
 def render_scene(scene: dict, paths: dict, quality: str = "draft",
                  width: int = 1920, height: int = 1080,
-                 motion_override: str | None = None) -> Path:
+                 motion_override: str | None = None, debug_filter: bool = False) -> Path:
     """
-    Render a single scene: still image + motion preset + captions + audio
-    → mp4 (re-encoded, then concat'd later with -c copy).
+    Render a single scene from asset_timeline (multi-still layered composition):
+    black canvas + per-asset looped stills (with per-asset motion_preset + offset captions + opacity)
+    + optional audio → mp4 (re-encoded).
+    Full asset_timeline only; no legacy scene["images"] path.
     """
     scene_id = scene["id"]
-
-    # Resolve image
-    versions = scene.get("images", [])
-    approved = next((v for v in versions if v.get("approved")), None) if versions else None
-    current_idx = scene.get("current_image", 0)
-    current = versions[current_idx] if versions and current_idx < len(versions) else None
-    image_info = approved or current
-    if not image_info:
-        raise RuntimeError(f"Scene {scene_id}: no approved or current image")
-    image_path = paths["scenes"].parent / image_info["path"]
 
     audio_path = paths["audio"] / f"scene-{scene_id:02d}.mp3"
     output_path = paths["renders"] / f"scene-{scene_id:02d}.mp4"
     paths["renders"].mkdir(parents=True, exist_ok=True)
 
-    duration = scene.get("_duration_secs", 5.0)
+    timeline = scene.get("asset_timeline", [])
+    if not timeline:
+        raise RuntimeError(f"Scene {scene_id}: asset_timeline is empty")
 
-    # Video: motion preset + (optional) caption chain
-    motion_preset = motion_override if motion_override else scene.get("motion_preset", "drift_left")
-    motion = get_motion(motion_preset, w=width, h=height)
-    captions = scene.get("caption_phrases", [])
-    if captions:
-        caption_chain = build_caption_chain(captions)
-        video_filter = f"[0:v]{motion},{caption_chain}[v]"
+    # Build asset list with original positions (for input indices); sort by layer asc for timeline + z-order
+    asset_list = [{"pos": pos, "asset": asset} for pos, asset in enumerate(timeline)]
+    sorted_assets = sorted(asset_list, key=lambda x: x["asset"].get("layer", 0))
+
+    # Validate types and compute cumulative timeline positions + total
+    cum = 0.0
+    for item in sorted_assets:
+        a = item["asset"]
+        if a.get("type") != "still":
+            t = a.get("type")
+            raise RuntimeError(f"Scene {scene_id}: unsupported asset type '{t}' (only 'still' supported)")
+        dur = float(a.get("duration_secs", 0.0))
+        item["time_in"] = cum
+        item["dur"] = dur
+        cum += dur
+    total_duration = cum if cum > 0 else 5.0
+
+    # Input layout (indices):
+    # 0: black canvas (lavfi color with explicit d=total)
+    # 1: audio (real or anullsrc placeholder for _strip compatibility)
+    # 2+: still inputs (in original asset_timeline order)
+    canvas_idx = 0
+    audio_slot_idx = 1
+    first_still_idx = 2
+
+    # Build input args list (order determines indices)
+    cmd_inputs: list[str] = [
+        "-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:r=30:d={total_duration}"
+    ]
+    if audio_path.exists():
+        cmd_inputs += ["-i", str(audio_path)]
     else:
-        video_filter = f"[0:v]{motion}[v]"
+        cmd_inputs += ["-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo"]
 
-    # Audio
-    audio_filter = _strip_filter_for_audio_check(audio_path, duration)
+    for entry in asset_list:
+        asset = entry["asset"]
+        resolved = paths["scenes"].parent / asset["path"]
+        cmd_inputs += ["-loop", "1", "-framerate", "30", "-i", str(resolved)]
+
+    # Audio filter (unchanged helper; relies on audio at index 1 when real audio present)
+    audio_filter = _strip_filter_for_audio_check(audio_path, total_duration)
     audio_filter_str = ",".join(audio_filter)
 
-    # Combine — single input if no audio
-    if not audio_path.exists():
-        cmd = [
-            "ffmpeg", "-y",
-            "-framerate", "30", "-loop", "1", "-i", str(image_path),
-            "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
-            "-filter_complex", f"{video_filter};{audio_filter_str}",
-            "-map", "[v]", "-map", "[aud]",
-            "-t", str(duration),
-            "-c:v", "libx264", "-preset", "fast" if quality == "draft" else "slow",
-            "-crf", "28" if quality == "draft" else "18",
-            "-pix_fmt", "yuv420p",
-            "-c:a", "aac", "-b:a", "192k",
-            "-shortest",
-            str(output_path),
-        ]
-    else:
-        cmd = [
-            "ffmpeg", "-y",
-            "-framerate", "30", "-loop", "1", "-i", str(image_path),
-            "-i", str(audio_path),
-            "-filter_complex", f"{video_filter};{audio_filter_str}",
-            "-map", "[v]", "-map", "[aud]",
-            "-t", str(duration),
-            "-c:v", "libx264", "-preset", "fast" if quality == "draft" else "slow",
-            "-crf", "28" if quality == "draft" else "18",
-            "-pix_fmt", "yuv420p",
-            "-c:a", "aac", "-b:a", "192k",
-            "-shortest",
-            str(output_path),
-        ]
+    # Per-asset processing filters -> [l{pos}]
+    processing_filters: list[str] = []
+    for entry in asset_list:
+        pos = entry["pos"]
+        asset = entry["asset"]
+        still_idx = first_still_idx + pos
+        layer = int(asset.get("layer", 0))
+        t_offset = entry["time_in"]
+
+        # motion (override applies to all assets for this call)
+        m_preset = motion_override if motion_override is not None else asset.get("motion_preset")
+        if m_preset:
+            motion = get_motion(m_preset, w=width, h=height)
+        else:
+            motion = None
+
+        # captions: offset relative times by this asset's scene time_in
+        caps = asset.get("caption_phrases", []) or []
+        if caps:
+            adjusted = []
+            for c in caps:
+                c2 = dict(c)
+                c2["time_in"] = float(c.get("time_in", 0.0)) + t_offset
+                c2["time_out"] = float(c.get("time_out", 0.0)) + t_offset
+                adjusted.append(c2)
+            cap_chain = build_caption_chain(adjusted)
+        else:
+            cap_chain = None
+
+        # opacity for overlays (layer > 0); default 1.0
+        opacity = float(asset.get("opacity", 1.0))
+
+        # build chain
+        in_ref = f"[{still_idx}:v]"
+        l_label = f"[l{pos}]"
+        parts: list[str] = []
+        if motion:
+            parts.append(motion)
+        if cap_chain:
+            parts.append(cap_chain)
+        if layer > 0 or opacity != 1.0:
+            # apply for layer>0 blending (even at 1.0 is harmless)
+            parts.append(f"colorchannelmixer=aa={opacity}")
+
+        if parts:
+            chain = ",".join(parts)
+            filt = f"{in_ref}{chain}{l_label}"
+        else:
+            filt = f"{in_ref}null{l_label}"
+        processing_filters.append(filt)
+
+    # Progressive overlay chain following sorted_assets order (first in sorted is base on canvas, no enable)
+    overlay_filters: list[str] = []
+    current = "[bg]"
+    for i, item in enumerate(sorted_assets):
+        pos = item["pos"]
+        t_in = item["time_in"]
+        t_out = t_in + item["dur"]
+        l_label = f"[l{pos}]"
+        is_last = (i == len(sorted_assets) - 1)
+        out_label = "[v]" if is_last else f"[ov{i}]"
+        t_in_s = f"{t_in:.3f}"
+        t_out_s = f"{t_out:.3f}"
+        if i == 0:
+            # base (lowest layer after sort) onto black; no enable (persists)
+            ov = f"{current}{l_label}overlay=0:0{out_label}"
+        else:
+            # higher (later in sorted) with time window enable
+            ov = f"{current}{l_label}overlay=0:0:enable='between(t\\,{t_in_s}\\,{t_out_s})'{out_label}"
+        overlay_filters.append(ov)
+        current = out_label
+
+    # Full filter_complex: label canvas as [bg]; per-asset stills; overlays; audio
+    filter_parts: list[str] = [f"[0:v]null[bg]"] + processing_filters + overlay_filters
+    filter_complex = ";".join(filter_parts) + ";" + audio_filter_str
+
+    # Assemble ffmpeg cmd
+    cmd = [
+        "ffmpeg", "-y",
+        *cmd_inputs,
+        "-filter_complex", filter_complex,
+        "-map", "[v]", "-map", "[aud]",
+        "-t", str(total_duration),
+        "-c:v", "libx264", "-preset", "fast" if quality == "draft" else "slow",
+        "-crf", "28" if quality == "draft" else "18",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "192k",
+        "-shortest",
+        str(output_path),
+    ]
+
+    if debug_filter:
+        print(" ".join(cmd))
+        return output_path
 
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     if result.returncode != 0:
@@ -172,13 +258,14 @@ def concat_scenes(scene_paths: list[Path], output_path: Path, quality: str = "dr
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: assemble.py <slug> [--quality draft|high] [--scene <id>]")
+        print("Usage: assemble.py <slug> [--quality draft|high] [--scene <id>] [--motion <preset>] [--debug-filter]")
         sys.exit(1)
 
     slug = sys.argv[1]
     quality = "draft"
     single_scene = None
     motion_override = None
+    debug_filter = False
 
     args = sys.argv[2:]
     i = 0
@@ -189,6 +276,8 @@ def main():
             single_scene = int(args[i + 1]); i += 2
         elif args[i] == "--motion" and i + 1 < len(args):
             motion_override = args[i + 1]; i += 2
+        elif args[i] == "--debug-filter":
+            debug_filter = True; i += 1
         else:
             i += 1
 
@@ -201,7 +290,7 @@ def main():
         if not scene:
             print(f"Scene {single_scene} not found", file=sys.stderr)
             sys.exit(1)
-        output = render_scene(scene, paths, quality, motion_override=motion_override)
+        output = render_scene(scene, paths, quality, motion_override=motion_override, debug_filter=debug_filter)
         print(f"Rendered: {output}")
         return
 
@@ -218,19 +307,26 @@ def main():
     if invalid:
         print(f"ERROR: {len(invalid)} scenes without a valid 'still' asset (type+path): {invalid}")
     if unapproved:
-        print(f"ERROR: {len(unapproved)} scenes without an approved asset: {unapproved}")
-    if invalid or unapproved:
+        if debug_filter:
+            print(f"DEBUG: {len(unapproved)} scenes without approved asset (proceeding for filter debug): {unapproved}")
+        else:
+            print(f"ERROR: {len(unapproved)} scenes without an approved asset: {unapproved}")
+    if invalid or (unapproved and not debug_filter):
         sys.exit(1)
 
     print(f"Rendering {len(scenes)} scenes (quality={quality})…")
     rendered = []
     for scene in scenes:
-        asset = scene["asset_timeline"][0]
+        asset = (scene.get("asset_timeline") or [{}])[0]
         print(f"  scene {scene['id']:02d} ({asset.get('duration_secs', 0.0):.1f}s, "
               f"motion={asset.get('motion_preset', '?')}, "
               f"captions={len(asset.get('caption_phrases', []))})")
-        output = render_scene(scene, paths, quality)
+        output = render_scene(scene, paths, quality, motion_override=motion_override, debug_filter=debug_filter)
         rendered.append(output)
+
+    if debug_filter:
+        print("\n[debug-filter] Commands printed; no files rendered, concat skipped.")
+        return
 
     # Concat
     paths["exports"].mkdir(parents=True, exist_ok=True)
