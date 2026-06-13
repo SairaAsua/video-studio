@@ -801,71 +801,100 @@
   #v3-tab-captions { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
   #v3-tab-captions.hidden { display: none; }
 
-  /* ── Render tab (v1.1.4) ── */
-  .render-editor {
-    padding: 14px;
-    overflow-y: auto;
-    flex: 1;
+  /* ── Timeline tab ── */
+  #v3-tab-timeline { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+  #v3-tab-timeline.hidden { display: none; }
+
+  .timeline-shell { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+
+  /* Zoom bar */
+  .timeline-zoom-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border-bottom: 1px solid var(--border);
+    background: var(--surface); flex-shrink: 0;
   }
-  .render-toolbar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 14px;
-    flex-wrap: wrap;
+  .timeline-zoom-bar span { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
+
+  /* Preview placeholder */
+  .timeline-preview-placeholder {
+    height: 120px; flex-shrink: 0; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg); color: var(--text-muted); font-size: 12px; font-style: italic;
   }
-  .render-toolbar label {
-    font-size: 11px;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+
+  /* Ruler */
+  .timeline-ruler {
+    height: 28px; flex-shrink: 0; position: relative; overflow: hidden;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    cursor: default;
   }
-  .render-toolbar select {
-    background: var(--surface);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 4px 8px;
-    font-size: 12px;
-    font-family: inherit;
+  .timeline-ruler-tick {
+    position: absolute; bottom: 4px; font-size: 9px; color: var(--text-muted);
+    font-family: var(--font-mono); transform: translateX(-50%);
   }
-  .render-preview {
-    background: #000;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 8px;
-    margin-bottom: 12px;
-    text-align: center;
+  .timeline-ruler-mark {
+    position: absolute; bottom: 0; width: 1px; height: 6px; background: var(--border);
   }
-  .render-preview video {
-    width: 100%;
-    max-height: 360px;
-  }
-  .render-preview .empty {
-    padding: 60px 20px;
-    color: var(--text-muted);
-  }
-  .render-meta {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-bottom: 12px;
-  }
-  .render-meta code {
+
+  /* Tracks container */
+  .timeline-tracks {
+    flex: 1; overflow-y: auto; position: relative;
     background: var(--bg);
-    padding: 1px 5px;
-    border-radius: 3px;
-    font-family: var(--font-mono);
   }
-  .render-footer-note {
-    font-size: 10px;
-    color: var(--text-muted);
-    font-style: italic;
-    border-top: 1px solid var(--border);
-    padding-top: 8px;
-    margin-top: 12px;
+
+  /* Playhead */
+  .timeline-playhead {
+    position: absolute; top: 0; bottom: 0; width: 2px;
+    background: var(--accent); z-index: 10; pointer-events: none;
+    box-shadow: 0 0 4px rgba(201, 160, 58, 0.4);
   }
-  #v3-tab-render { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
-  #v3-tab-render.hidden { display: none; }
+
+  /* Track row */
+  .timeline-track {
+    height: 52px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; position: relative;
+    padding-left: 60px;
+  }
+  .timeline-track-label {
+    position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+    font-size: 10px; color: var(--text-muted); font-family: var(--font-mono);
+    width: 44px; text-align: right;
+  }
+
+  /* Asset block on track */
+  .timeline-block {
+    position: absolute; top: 6px; bottom: 6px;
+    background: var(--accent-dim); border: 1px solid var(--accent);
+    border-radius: 4px; overflow: hidden; cursor: default;
+    display: flex; align-items: center; padding: 0 8px;
+    font-size: 10px; color: var(--text); font-family: var(--font-mono);
+    white-space: nowrap; text-overflow: ellipsis;
+  }
+  .timeline-block.approved { border-color: var(--green); background: rgba(79, 195, 90, 0.15); }
+
+  /* Bin (filesystem-sourced) */
+  .timeline-bin {
+    height: 140px; flex-shrink: 0; border-top: 1px solid var(--border);
+    background: var(--surface); overflow-x: auto; overflow-y: hidden;
+    padding: 8px;
+  }
+  .timeline-bin-label {
+    font-size: 10px; color: var(--text-muted); text-transform: uppercase;
+    letter-spacing: 0.05em; margin-bottom: 6px;
+  }
+  .timeline-bin-items { display: flex; gap: 6px; }
+  .timeline-bin-thumb {
+    width: 80px; height: 60px; flex-shrink: 0; border-radius: 4px;
+    background: var(--bg); border: 1px solid var(--border);
+    overflow: hidden; display: flex; align-items: center; justify-content: center;
+  }
+  .timeline-bin-thumb img {
+    width: 100%; height: 100%; object-fit: cover;
+  }
+  .timeline-bin-thumb .empty-thumb {
+    font-size: 9px; color: var(--text-muted); text-align: center;
+    padding: 4px;
+  }
 
   /* ── Script pane resize handle ── */
   .pane-resize-handle {
@@ -974,7 +1003,7 @@
         <div class="v3-tab-bar" id="v3-tab-bar">
           <button class="tab-btn active" data-v3-tab="assets">Assets</button>
           <button class="tab-btn" data-v3-tab="captions">Captions</button>
-          <button class="tab-btn" data-v3-tab="render">Render</button>
+          <button class="tab-btn" data-v3-tab="timeline">Timeline</button>
         </div>
         <div class="v3-tab-body" id="v3-tab-assets">
           <div class="assets-toolbar">
@@ -989,7 +1018,7 @@
           </div>
         </div>
         <div class="v3-tab-body hidden" id="v3-tab-captions"></div>
-        <div class="v3-tab-body hidden" id="v3-tab-render"></div>
+        <div class="v3-tab-body hidden" id="v3-tab-timeline"></div>
       </div>
     </div>
   </section>
@@ -1620,7 +1649,7 @@ function renderV3Workspace() {
   if (activeTab) {
     const tabName = activeTab.dataset.v3Tab;
     if (tabName === 'captions') renderV3Captions();
-    else if (tabName === 'render') renderV3Render();
+    else if (tabName === 'timeline') renderV3Timeline();
   }
 }
 
@@ -1628,12 +1657,12 @@ function switchV3Tab(name) {
   document.querySelectorAll('#v3-tab-bar [data-v3-tab]').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.v3Tab === name);
   });
-  ['assets', 'captions', 'render'].forEach((tab) => {
+  ['assets', 'captions', 'timeline'].forEach((tab) => {
     $(`v3-tab-${tab}`).classList.toggle('hidden', tab !== name);
   });
   if (name === 'assets') renderV3Assets();
   if (name === 'captions') renderV3Captions();
-  if (name === 'render') renderV3Render();
+  if (name === 'timeline') renderV3Timeline();
 }
 
 function wireV3Events() {
@@ -2004,119 +2033,153 @@ function renderV3Captions() {
   });
 }
 
-// ── Render tab (v1.1.4) ──
+// ── Timeline tab ──
+let _timelineZoom = 1.0;
 
-const RENDER_PRESETS = [
-  'drift_left', 'drift_right', 'zoom_in',
-  'push_in_left', 'push_in_right', 'parallax_lr', 'parallax_rl',
-];
+function timelineZoom(factor) {
+  _timelineZoom = Math.max(0.25, Math.min(4.0, _timelineZoom * factor));
+  renderV3Timeline();
+}
 
-let _v3RenderState = {
-  quality: 'draft',
-  motion_override: '',     // empty = use scene's preset
-  rendering: false,
-  last_path: '',
-};
+function timelineZoomFit() {
+  _timelineZoom = 1.0;
+  renderV3Timeline();
+}
 
-function renderV3Render() {
-  const container = $('v3-tab-render');
+function buildTimelineBin(currentAssets) {
+  // Collect all approved assets across all scenes
+  const allStills = [];
+  (state.scenes || []).forEach(s => {
+    (s.asset_timeline || []).forEach(a => {
+      if (a.type === 'still' && a.path) {
+        allStills.push({ path: a.path, layer: a.layer, sceneId: s.id });
+      }
+    });
+  });
+
+  if (!allStills.length) {
+    return '<div class="timeline-bin"><div class="timeline-bin-label">Bin — no stills</div></div>';
+  }
+
+  const itemsHtml = allStills.map(a => {
+    const imgSrc = '/projects/' + encodeURIComponent(state.slug) + '/' + a.path;
+    return '' +
+      '<div class="timeline-bin-thumb" title="' + escHtml(a.path) + ' (scene ' + a.sceneId + ')">' +
+        '<img src="' + imgSrc + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" style="width:100%;height:100%;object-fit:cover">' +
+        '<div class="empty-thumb" style="display:none;align-items:center;justify-content:center;width:100%;height:100%">' +
+          escHtml(a.path.split('/').pop() || '?') +
+        '</div>' +
+      '</div>';
+  }).join('');
+
+  return '' +
+    '<div class="timeline-bin">' +
+      '<div class="timeline-bin-label">Bin — ' + allStills.length + ' stills from filesystem</div>' +
+      '<div class="timeline-bin-items">' + itemsHtml + '</div>' +
+    '</div>';
+}
+
+function renderV3Timeline() {
+  const container = $('v3-tab-timeline');
   const scene = state.scenes[state.v3Index];
   if (!scene) {
-    container.innerHTML = '<div class="render-editor"><div class="empty">No scene selected</div></div>';
+    container.innerHTML = '<div class="timeline-shell"><div class="empty" style="padding:24px;text-align:center">No scene selected</div></div>';
     return;
   }
 
-  const presetsOptions = RENDER_PRESETS.map((p) =>
-    '<option value="' + p + '"' + (_v3RenderState.motion_override === p ? ' selected' : '') + '>' + p + '</option>'
-  ).join('');
+  const assets = scene.asset_timeline || [];
+  const sceneDur = (scene.time_in != null && scene.time_out != null)
+    ? parseFloat(scene.time_out) - parseFloat(scene.time_in)
+    : 0;
+  const totalDuration = Math.max(
+    ...assets.map(a => (a.duration_secs || 0)),
+    sceneDur,
+    10
+  );
 
-  const videoHtml = _v3RenderState.last_path
-    ? '<video controls preload="metadata" src="/projects/' + encodeURIComponent(state.slug) + '/renders/' + _v3RenderState.last_path + '"></video>'
-    : '<div class="empty">No render yet. Click Re-render below.</div>';
+  // Pixels per second — zoomable
+  const pxPerSec = _timelineZoom * 40;
+  const trackAreaWidth = totalDuration * pxPerSec;
+  const rulerWidth = Math.max(trackAreaWidth, 400);
 
-  const metaHtml = _v3RenderState.last_path
-    ? '<div class="render-meta">File: <code>projects/' + escHtml(state.slug) + '/renders/' + escHtml(_v3RenderState.last_path) + '</code></div>'
-    : '';
-
-  container.innerHTML =
-    '<div class="render-editor">' +
-      '<div class="render-toolbar">' +
-        '<label>Quality</label>' +
-        '<select id="render-quality">' +
-          '<option value="draft"' + (_v3RenderState.quality === 'draft' ? ' selected' : '') + '>draft</option>' +
-          '<option value="high"' + (_v3RenderState.quality === 'high' ? ' selected' : '') + '>high</option>' +
-        '</select>' +
-        '<label>Motion</label>' +
-        '<select id="render-motion">' +
-          '<option value="">(scene default: ' + escHtml(scene.motion_preset || 'drift_left') + ')</option>' +
-          presetsOptions +
-        '</select>' +
-        '<button class="btn primary" id="render-go-btn" ' + (_v3RenderState.rendering ? 'disabled' : '') + '>' +
-          (_v3RenderState.rendering ? '⟳ Rendering…' : 'Re-render this scene') +
-        '</button>' +
-        (_v3RenderState.last_path
-          ? '<button class="btn" id="render-download-btn">Download</button>' +
-            '<button class="btn" id="render-delete-btn" style="color:var(--red)">Delete</button>'
-          : '') +
-      '</div>' +
-      '<div class="render-preview">' + videoHtml + '</div>' +
-      metaHtml +
-      '<div class="render-footer-note">This is per-scene preview. For full project render, use the TOOLS → Render tab.</div>' +
+  // Build zoom bar
+  const zoomHtml =
+    '<div class="timeline-zoom-bar">' +
+      '<button class="btn" style="font-size:14px;padding:2px 8px" data-timeline-action="zoom-out">−</button>' +
+      '<button class="btn" style="font-size:14px;padding:2px 8px" data-timeline-action="zoom-in">+</button>' +
+      '<button class="btn" style="font-size:11px;padding:2px 8px" data-timeline-action="zoom-fit">Fit</button>' +
+      '<span style="margin-left:auto">Duration: ' + totalDuration.toFixed(1) + 's</span>' +
     '</div>';
 
-  // Wire
-  $('render-quality').addEventListener('change', (e) => { _v3RenderState.quality = e.target.value; });
-  $('render-motion').addEventListener('change', (e) => { _v3RenderState.motion_override = e.target.value; });
-  $('render-go-btn').addEventListener('click', () => v3RenderGo(scene));
-  if (_v3RenderState.last_path) {
-    $('render-download-btn').addEventListener('click', () => {
-      window.open('/projects/' + encodeURIComponent(state.slug) + '/renders/' + _v3RenderState.last_path, '_blank');
+  // Build preview placeholder
+  const previewHtml =
+    '<div class="timeline-preview-placeholder">' +
+      '⏵ Preview — Scene ' + escHtml(String(scene.id)) +
+      (assets.length ? ' (' + assets.length + ' assets)' : '') +
+    '</div>';
+
+  // Build ruler ticks
+  let rulerHtml = '';
+  for (let t = 0; t <= totalDuration; t++) {
+    const x = t * pxPerSec;
+    rulerHtml += '<div class="timeline-ruler-mark" style="left:' + x + 'px"></div>';
+    rulerHtml += '<div class="timeline-ruler-tick" style="left:' + x + 'px">' + t + 's</div>';
+  }
+  rulerHtml = '<div class="timeline-ruler" style="min-width:' + rulerWidth + 'px">' + rulerHtml + '</div>';
+
+  // Build tracks (layers 0-4)
+  let tracksHtml = '';
+  for (let layer = 0; layer <= 4; layer++) {
+    let blocksHtml = '';
+    assets.forEach((a, ai) => {
+      const assetLayer = (a.layer != null) ? a.layer : 0;
+      if (assetLayer !== layer) return;
+      const startX = 0;
+      const width = (a.duration_secs || 5) * pxPerSec;
+      const label = a.path ? a.path.split('/').pop().replace(/\.(jpg|png|jpeg|webp)$/i, '') : 'asset-' + ai;
+      blocksHtml +=
+        '<div class="timeline-block' + (a.approved ? ' approved' : '') + '"' +
+          ' style="left:' + startX + 'px; width:' + width + 'px"' +
+          ' title="' + escHtml(a.path || '') + ' — ' + (a.duration_secs || 0).toFixed(1) + 's">' +
+          escHtml(label) +
+        '</div>';
     });
-    $('render-delete-btn').addEventListener('click', () => v3RenderDelete(scene));
+    tracksHtml +=
+      '<div class="timeline-track">' +
+        '<div class="timeline-track-label">L' + layer + '</div>' +
+        blocksHtml +
+      '</div>';
   }
-}
 
-async function v3RenderGo(scene) {
-  if (_v3RenderState.rendering) return;
-  _v3RenderState.rendering = true;
-  renderV3Render();
-  try {
-    const body = {
-      quality: _v3RenderState.quality,
-      motion_override: _v3RenderState.motion_override || null,
-    };
-    const data = await api(
-      '/api/project/' + encodeURIComponent(state.slug) +
-      '/storyboard/' + scene.id + '/render-scene',
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
-    );
-    if (data && data.path) {
-      // path is "renders/scene-NN.mp4" — extract just the filename
-      const parts = data.path.split('/');
-      _v3RenderState.last_path = parts[parts.length - 1];
-    }
-    setRenderMsg('Rendered scene ' + scene.id);
-  } catch (err) {
-    setRenderMsg('Render failed: ' + err.message, true);
-  } finally {
-    _v3RenderState.rendering = false;
-    renderV3Render();
-  }
-}
+  const tracksContainerHtml =
+    '<div class="timeline-tracks" style="overflow-x:auto">' +
+      '<div style="position:relative;min-width:' + rulerWidth + 'px;height:' + (5 * 52) + 'px">' +
+        '<div class="timeline-playhead" style="left:0px"></div>' +
+        tracksHtml +
+      '</div>' +
+    '</div>';
 
-async function v3RenderDelete(scene) {
-  try {
-    await api(
-      '/api/project/' + encodeURIComponent(state.slug) +
-      '/storyboard/' + scene.id + '/render-scene/delete',
-      { method: 'POST' }
-    );
-    _v3RenderState.last_path = '';
-    setRenderMsg('Render deleted');
-    renderV3Render();
-  } catch (err) {
-    setRenderMsg('Delete failed: ' + err.message, true);
-  }
+  // Build filesystem-sourced bin: show scene stills available
+  const binHtml = buildTimelineBin(assets);
+
+  container.innerHTML =
+    '<div class="timeline-shell">' +
+      zoomHtml +
+      previewHtml +
+      rulerHtml +
+      tracksContainerHtml +
+      binHtml +
+    '</div>';
+
+  // Wire zoom buttons
+  container.querySelectorAll('[data-timeline-action]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const action = btn.dataset.timelineAction;
+      if (action === 'zoom-in') timelineZoom(1.3);
+      else if (action === 'zoom-out') timelineZoom(0.7);
+      else if (action === 'zoom-fit') timelineZoomFit();
+    });
+  });
 }
 
 // ── Script pane resizer (draggable right edge) ──
