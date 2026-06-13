@@ -13,7 +13,7 @@
     --text-muted: #6a7a8e;
     --accent: #c9a03a;
     --accent-dim: #8a6d28;
-    --green: #4fc3a8;
+    --green: #4fc35a;
     --red: #e0556a;
     --radius: 8px;
     --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -945,7 +945,7 @@
         <span class="prompt-status" id="prompts-status">default</span>
         <button class="btn" id="prompts-reset-btn" title="Reset to defaults">Reset</button>
         <button class="btn primary" id="prompts-save-btn" disabled>Save</button>
-        <button class="btn" id="prompts-regen-btn" disabled>Re-generate selected scene</button>
+        <button class="btn" id="prompts-regen-btn" disabled title="Re-generate selected scene">Regen</button>
       </div>
       <div class="prompts-editor" id="prompts-editor">
         <div class="empty">Select a project to load prompts</div>
@@ -1464,13 +1464,22 @@ function renderPromptsEditor() {
         </div>
       `);
     } else if (name.endsWith('_template')) {
-      fields.push(`
-        <div class="field">
-          <label class="field-label">${escHtml(name)} (template, read-only)</label>
-          <p class="field-help">Use <code>{visual_direction}</code>, <code>{beacon_world}</code>, etc. as placeholders.</p>
-          <textarea class="template" readonly>${escHtml(value)}</textarea>
-        </div>
-      `);
+      if (__v3) {
+        fields.push(`
+          <div class="field">
+            <label class="field-label">${escHtml(name)} (template, read-only)</label>
+            <p class="field-help">The prompts above are prepended automatically. The scene-specific direction comes after.</p>
+          </div>
+        `);
+      } else {
+        fields.push(`
+          <div class="field">
+            <label class="field-label">${escHtml(name)} (template, read-only)</label>
+            <p class="field-help">Use <code>{visual_direction}</code>, <code>{beacon_world}</code>, etc. as placeholders.</p>
+            <textarea class="template" readonly>${escHtml(value)}</textarea>
+          </div>
+        `);
+      }
     } else {
       const helpText = name === 'beacon_world'
         ? 'Brand-level canon. See DESIGN.md §1. Reused across all scenes.'
@@ -1542,9 +1551,14 @@ function updateRegenButton() {
   $('prompts-regen-btn').disabled = !(
     state.slug && state.selectedScene != null && !state.promptsDirty
   );
-  $('prompts-regen-btn').textContent = state.selectedScene != null
-    ? `Re-generate scene ${state.selectedScene}`
-    : 'Re-generate selected scene';
+  const btn = $('prompts-regen-btn');
+  if (state.selectedScene != null) {
+    btn.textContent = `Regen scene ${state.selectedScene}`;
+    btn.title = `Re-generate scene ${state.selectedScene}`;
+  } else {
+    btn.textContent = 'Regen';
+    btn.title = 'Re-generate selected scene';
+  }
 }
 
 async function regenerateSelected() {
