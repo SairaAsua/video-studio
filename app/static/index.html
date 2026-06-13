@@ -492,6 +492,17 @@
   }
   footer .render-status { display: flex; align-items: center; gap: 8px; }
   footer .render-status .error { color: var(--red); }
+
+  /* v3 per-scene workspace (only active when ?v3=1; prefixed, minimal addition) */
+  .storyboard-grid.v3-workspace {
+    display: block;
+  }
+  .storyboard-grid.v3-workspace .scene-card {
+    width: 100%;
+  }
+  .storyboard-grid.v3-workspace .scene-image {
+    height: 320px;
+  }
 </style>
 </head>
 <body>
@@ -584,6 +595,10 @@
 
 const API = '';
 
+// URL feature flag read ONCE at init (before any rendering). Default OFF preserves exact grid behavior.
+const __urlParams = new URLSearchParams(window.location.search);
+const __v3 = __urlParams.get('v3') === '1';
+
 // Single source of client state. The grid is always re-rendered from here,
 // so transient UI (the generating spinner) survives SSE-triggered reloads.
 const state = {
@@ -595,6 +610,8 @@ const state = {
   prompts: null,           // { image: {...}, video: {...} } loaded from /api/.../prompts
   promptsDirty: false,     // user edited but not saved
   selectedScene: null,     // currently focused scene for re-generate
+  v3Mode: __v3,            // ?v3=1 enables per-scene workspace; default false = grid (no behavior change)
+  v3Index: 0,              // current scene index when v3Mode (clamped on render)
 };
 
 const $ = (id) => document.getElementById(id);
@@ -714,6 +731,9 @@ async function loadProject(slug) {
 
     state.scenes = data.storyboard?.scenes || [];
 
+    // v3: start at first scene when (re)loading a project
+    if (state.v3Mode) state.v3Index = 0;
+
     // Script — show best available artifact, but never clobber unsaved edits.
     const editor = $('script-editor');
     const incoming = data.script ?? data.SPINE ?? data.brief ?? '';
@@ -751,13 +771,36 @@ function updateRenderGate() {
 function renderStoryboard() {
   const grid = $('storyboard-grid');
   const scenes = state.scenes;
-  $('sb-count').textContent = `${scenes.length} scenes`;
+
+  if (state.v3Mode) {
+    $('sb-count').textContent = scenes.length ? `Scene ${Math.min(state.v3Index + 1, scenes.length)} of ${scenes.length}` : `${scenes.length} scenes`;
+  } else {
+    $('sb-count').textContent = `${scenes.length} scenes`;
+  }
 
   if (!scenes.length) {
     grid.innerHTML = '<div class="scene-card empty">No storyboard yet</div>';
+    grid.classList.remove('v3-workspace');
     return;
   }
-  grid.innerHTML = scenes.map(sceneCard).join('');
+
+  if (!state.v3Mode) {
+    // Default (v3=0 or absent): exact original grid behavior, no changes
+    grid.innerHTML = scenes.map(sceneCard).join('');
+    grid.classList.remove('v3-workspace');
+    return;
+  }
+
+  // v3Mode (?v3=1): per-scene workspace, ONE scene at a time, reusing sceneCard()
+  state.v3Index = Math.max(0, Math.min(state.v3Index, scenes.length - 1));
+  const idx = state.v3Index;
+  const navHtml = `
+<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;padding:4px 0;">
+  <button class="btn" data-action="scene-prev" ${idx === 0 ? 'disabled' : ''}>◀ Prev</button>
+  <button class="btn" data-action="scene-next" ${idx === scenes.length - 1 ? 'disabled' : ''}>Next ▶</button>
+</div>`;
+  grid.innerHTML = navHtml + sceneCard(scenes[idx]);
+  grid.classList.add('v3-workspace');
 }
 
 function sceneCard(s) {
@@ -927,6 +970,18 @@ function wireEvents() {
       case 'approve': approveCurrent(id); break;
       case 'prev': navigateImage(id, -1); break;
       case 'next': navigateImage(id, 1); break;
+      case 'scene-prev':
+        if (state.v3Mode && state.scenes.length) {
+          state.v3Index = Math.max(0, state.v3Index - 1);
+          renderStoryboard();
+        }
+        break;
+      case 'scene-next':
+        if (state.v3Mode && state.scenes.length) {
+          state.v3Index = Math.min(state.scenes.length - 1, state.v3Index + 1);
+          renderStoryboard();
+        }
+        break;
     }
   });
 
