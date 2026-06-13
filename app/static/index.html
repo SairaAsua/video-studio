@@ -1061,27 +1061,22 @@
 
 const API = '';
 
-// URL feature flag read ONCE at init (before any rendering).
-// Default ON: v3 per-scene workspace is the primary dashboard as of v2.0.
-// Pass ?v1=1 to opt back into the legacy v2 grid (kept for rollback).
-const __urlParams = new URLSearchParams(window.location.search);
-const __v3 = __urlParams.get('v1') !== '1';
 
 // Single source of client state. The grid is always re-rendered from here,
 // so transient UI (the generating spinner) survives SSE-triggered reloads.
 const state = {
   slug: '',
   scenes: [],
-  generating: new Set(),   // scene ids with a pending generation
+  generating: new Set(),   // scene ids currently being generated
   originalScript: '',
   loadToken: 0,            // guards against out-of-order loadProject responses
   prompts: null,           // { image: {...}, video: {...} } loaded from /api/.../prompts
   promptsDirty: false,     // user edited but not saved
   selectedScene: null,     // currently focused scene for re-generate
-  v3Mode: __v3,            // v3 per-scene workspace is the default dashboard as of v2.0; pass ?v1=1 for legacy grid
-  v3Index: 0,              // current scene index when v3Mode (clamped on render)
+  v3Index: 0,              // current scene index (clamped on render)
   undoTimeout: null,       // setTimeout handle for undo toast
   undoSceneId: null,       // scene id for undo operation
+  promptsStatus: 'default', // 'default' | 'custom' | 'unsaved'
 };
 
 const $ = (id) => document.getElementById(id);
@@ -1204,7 +1199,7 @@ async function loadProject(slug) {
     state.scenes = data.storyboard?.scenes || [];
 
     // v3: start at first scene when (re)loading a project
-    if (state.v3Mode) state.v3Index = 0;
+    state.v3Index = 0;
 
     // Script — show best available artifact, but never clobber unsaved edits.
     const editor = $('script-editor');
@@ -1236,8 +1231,8 @@ function updateRenderGate() {
   if (allApproved && !$('render-msg').textContent) {
     setRenderMsg('All scenes approved ✓');
   }
-  $('render-btn').classList.toggle('hidden', state.v3Mode);
-  $('tools-render-btn').disabled = !allApproved || !state.v3Mode;
+  $('render-btn').classList.add('hidden');
+  $('tools-render-btn').disabled = !allApproved;
 }
 
 // ── Storyboard rendering ──
@@ -1246,89 +1241,27 @@ function renderStoryboard() {
   const grid = $('storyboard-grid');
   const scenes = state.scenes;
 
-  if (state.v3Mode) {
-    $('sb-count').textContent = scenes.length ? `Scene ${Math.min(state.v3Index + 1, scenes.length)} of ${scenes.length}` : `${scenes.length} scenes`;
-  } else {
-    $('sb-count').textContent = `${scenes.length} scenes`;
-  }
+  $('sb-count').textContent = scenes.length ? `Scene ${Math.min(state.v3Index + 1, scenes.length)} of ${scenes.length}` : `${scenes.length} scenes`;
 
   if (!scenes.length) {
     grid.innerHTML = '<div class="scene-card empty">No storyboard yet</div>';
     grid.classList.remove('v3-workspace');
-    if (state.v3Mode) {
-      grid.style.display = '';
-      $('v3-workspace-shell').style.display = 'none';
-      $('v3-scene-strip').style.display = 'none';
-      $('v3-legend').style.display = 'none';
-    }
+    grid.style.display = '';
+    $('v3-workspace-shell').style.display = 'none';
+    $('v3-scene-strip').style.display = 'none';
+    $('v3-legend').style.display = 'none';
     return;
   }
 
-  if (!state.v3Mode) {
-    // Default (v3=0 or absent): exact original grid behavior, no changes
-    grid.innerHTML = scenes.map(sceneCard).join('');
-    grid.classList.remove('v3-workspace');
-    return;
-  }
-
-  // v3Mode (default as of v2.0): per-scene workspace shell (sidebar + tabbed panel) replaces
-  // the single-card + Prev/Next layout. See renderV3Workspace() below.
   state.v3Index = Math.max(0, Math.min(state.v3Index, scenes.length - 1));
   renderV3Workspace();
-}
-
-function sceneCard(s) {
-  const versions = s.images || [];
-  const total = versions.length;
-  const idx = total ? Math.min(s.current_image || 0, total - 1) : 0;
-  const current = versions[idx];
-  const generating = state.generating.has(s.id);
-  const hasApproved = versions.some((v) => v.approved);
-
-  const imgHtml = generating
-    ? `<div class="placeholder generating"><span class="spinner"></span> Generating…<br><small>scene ${s.id}</small></div>`
-    : current
-      ? `<img src="${escHtml(imageUrl(current.path))}" alt="Scene ${s.id} v${idx + 1}">`
-      : `<div class="placeholder">Scene ${s.id}<br><small>No image generated</small></div>`;
-
-  const navArrows = total > 1 ? `
-      <button class="img-nav prev" data-action="prev" title="Previous version">‹</button>
-      <button class="img-nav next" data-action="next" title="Next version">›</button>` : '';
-
-  const versionBadge = total > 0
-    ? `<span class="badge version">v${idx + 1}/${total}</span>`
-    : '';
-
-  const status = hasApproved ? 'approved' : (s.locked ? 'locked' : 'draft');
-  const statusText = hasApproved ? '✓ Approved' : (s.locked ? '🔒 Locked' : 'Draft');
-
-  return `
-    <div class="scene-card ${status}" data-scene-id="${s.id}">
-      <div class="scene-image">
-        ${imgHtml}
-        ${navArrows}
-        ${versionBadge}
-      </div>
-      <div class="scene-info">
-        <div class="scene-time">Scene ${s.id} · ${escHtml(s.time_in || '')}–${escHtml(s.time_out || '')}</div>
-        <div class="scene-text">
-          <textarea data-field="text" placeholder="Scene narration...">${escHtml(s.text || '')}</textarea>
-        </div>
-        <div class="scene-actions">
-          <span class="badge ${status}">${statusText}</span>
-          <button class="btn" data-action="generate" ${s.locked || generating ? 'disabled' : ''}>🖼 Gen</button>
-          <button class="btn" data-action="lock">${s.locked ? 'Unlock' : 'Lock'}</button>
-          <button class="btn approve" data-action="approve" ${hasApproved || !current ? 'disabled' : ''}>✓</button>
-        </div>
-      </div>
-    </div>`;
 }
 
 // ── Scene actions ──
 
 async function generateVersion(id) {
   state.generating.add(id);
-  if (state.v3Mode && state.scenes[state.v3Index]?.id === id) renderV3Assets();
+  if (state.scenes[state.v3Index]?.id === id) renderV3Assets();
   else renderStoryboard();
   setRenderMsg(`Generating scene ${id}…`);
   try {
@@ -1339,55 +1272,8 @@ async function generateVersion(id) {
     setRenderMsg(`Scene ${id}: image ready`);
   } catch (err) {
     state.generating.delete(id);
-    if (state.v3Mode && state.scenes[state.v3Index]?.id === id) renderV3Assets();
+    if (state.scenes[state.v3Index]?.id === id) renderV3Assets();
     else renderStoryboard();
-    setRenderMsg(`Scene ${id}: ${err.message}`, true);
-  }
-}
-
-async function navigateImage(id, delta) {
-  try {
-    await api(`/api/project/${encodeURIComponent(state.slug)}/storyboard/${id}/navigate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ delta }),
-    });
-    await loadProject(state.slug);
-  } catch (err) {
-    setRenderMsg(`Scene ${id}: ${err.message}`, true);
-  }
-}
-
-async function lockScene(id, locked) {
-  try {
-    await api(`/api/project/${encodeURIComponent(state.slug)}/storyboard/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ locked }),
-    });
-    await loadProject(state.slug);
-  } catch (err) {
-    setRenderMsg(`Scene ${id}: ${err.message}`, true);
-  }
-}
-
-async function approveCurrent(id) {
-  try {
-    await api(`/api/project/${encodeURIComponent(state.slug)}/storyboard/${id}/approve`, { method: 'POST' });
-    await loadProject(state.slug);
-  } catch (err) {
-    setRenderMsg(`Scene ${id}: ${err.message}`, true);
-  }
-}
-
-async function updateSceneText(id, text) {
-  try {
-    await api(`/api/project/${encodeURIComponent(state.slug)}/storyboard/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-    });
-  } catch (err) {
     setRenderMsg(`Scene ${id}: ${err.message}`, true);
   }
 }
@@ -1429,52 +1315,6 @@ function wireEvents() {
   $('render-btn').addEventListener('click', triggerRender);
   $('script-editor').addEventListener('input', (e) => {
     $('save-script-btn').disabled = e.target.value === state.originalScript;
-  });
-
-  const grid = $('storyboard-grid');
-
-  grid.addEventListener('click', (e) => {
-    const btn = e.target.closest('button[data-action]');
-    if (!btn) return;
-    const id = Number(btn.closest('[data-scene-id]')?.dataset.sceneId);
-    if (!Number.isFinite(id)) return;
-    const scene = state.scenes.find((s) => s.id === id);
-
-    switch (btn.dataset.action) {
-      case 'generate': generateVersion(id); break;
-      case 'lock': lockScene(id, !scene?.locked); break;
-      case 'approve': approveCurrent(id); break;
-      case 'prev': navigateImage(id, -1); break;
-      case 'next': navigateImage(id, 1); break;
-      case 'scene-prev':
-        if (state.v3Mode && state.scenes.length) {
-          state.v3Index = Math.max(0, state.v3Index - 1);
-          renderStoryboard();
-        }
-        break;
-      case 'scene-next':
-        if (state.v3Mode && state.scenes.length) {
-          state.v3Index = Math.min(state.scenes.length - 1, state.v3Index + 1);
-          renderStoryboard();
-        }
-        break;
-    }
-  });
-
-  grid.addEventListener('change', (e) => {
-    if (!e.target.matches('textarea[data-field="text"]')) return;
-    const id = Number(e.target.closest('[data-scene-id]')?.dataset.sceneId);
-    if (Number.isFinite(id)) updateSceneText(id, e.target.value);
-  });
-
-  // Track selected scene for "Re-generate selected scene" in Prompts pane
-  grid.addEventListener('click', (e) => {
-    const card = e.target.closest('[data-scene-id]');
-    if (!card) return;
-    const id = Number(card.dataset.sceneId);
-    if (!Number.isFinite(id)) return;
-    state.selectedScene = id;
-    updateRegenButton();
   });
 
   // Tools pane — tab switching
@@ -1552,7 +1392,7 @@ function renderPromptsEditor() {
         </div>
       `);
     } else if (name.endsWith('_template')) {
-      if (__v3) {
+      if (true) {  // hide raw template syntax — show copy instead
         fields.push(`
           <div class="field">
             <label class="field-label">${escHtml(name)} (template, read-only)</label>
@@ -1636,9 +1476,9 @@ async function resetPrompts() {
 }
 
 function updateRegenButton() {
-  // in v3 mode, the active scene drives regen even if `selectedScene` is null
+  // the active scene (selectedScene or v3Index) drives regen
   const activeId = state.selectedScene != null ? state.selectedScene
-    : (state.v3Mode && state.scenes[state.v3Index] ? state.scenes[state.v3Index].id : null);
+    : (state.scenes[state.v3Index] ? state.scenes[state.v3Index].id : null);
   $('prompts-regen-btn').disabled = !(
     state.slug && activeId != null && !state.promptsDirty
   );
@@ -1654,7 +1494,7 @@ function updateRegenButton() {
 
 async function regenerateSelected() {
   const id = state.selectedScene != null ? state.selectedScene
-    : (state.v3Mode && state.scenes[state.v3Index] ? state.scenes[state.v3Index].id : null);
+    : (state.scenes[state.v3Index] ? state.scenes[state.v3Index].id : null);
   if (!state.slug || id == null) return;
   try {
     await api(
@@ -1708,9 +1548,7 @@ function renderExportItem(exp) {
   `;
 }
 
-// ── v3 (default as of v2.0) per-scene workspace: scene sidebar + tabbed panel ──
-// Additive and reached only when state.v3Mode is true; the default grid path
-// never calls into here, so the v3=off behavior is unchanged.
+// ── v3 per-scene workspace: scene sidebar + tabbed panel ──
 
 function v3SceneStatus(scene) {
   // Sidebar status glyph, by precedence: approved (any approved version) →
