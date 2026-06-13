@@ -59,7 +59,8 @@ def _strip_filter_for_audio_check(audio_path: Path, duration: float) -> list:
 
 
 def render_scene(scene: dict, paths: dict, quality: str = "draft",
-                 width: int = 1920, height: int = 1080) -> Path:
+                 width: int = 1920, height: int = 1080,
+                 motion_override: str | None = None) -> Path:
     """
     Render a single scene: still image + motion preset + captions + audio
     → mp4 (re-encoded, then concat'd later with -c copy).
@@ -83,8 +84,8 @@ def render_scene(scene: dict, paths: dict, quality: str = "draft",
     duration = scene.get("_duration_secs", 5.0)
 
     # Video: motion preset + (optional) caption chain
-    motion = get_motion(scene.get("motion_preset", "drift_left"),
-                        w=width, h=height)
+    motion_preset = motion_override if motion_override else scene.get("motion_preset", "drift_left")
+    motion = get_motion(motion_preset, w=width, h=height)
     captions = scene.get("caption_phrases", [])
     if captions:
         caption_chain = build_caption_chain(captions)
@@ -177,6 +178,7 @@ def main():
     slug = sys.argv[1]
     quality = "draft"
     single_scene = None
+    motion_override = None
 
     args = sys.argv[2:]
     i = 0
@@ -185,6 +187,8 @@ def main():
             quality = args[i + 1]; i += 2
         elif args[i] == "--scene" and i + 1 < len(args):
             single_scene = int(args[i + 1]); i += 2
+        elif args[i] == "--motion" and i + 1 < len(args):
+            motion_override = args[i + 1]; i += 2
         else:
             i += 1
 
@@ -197,7 +201,7 @@ def main():
         if not scene:
             print(f"Scene {single_scene} not found", file=sys.stderr)
             sys.exit(1)
-        output = render_scene(scene, paths, quality)
+        output = render_scene(scene, paths, quality, motion_override=motion_override)
         print(f"Rendered: {output}")
         return
 

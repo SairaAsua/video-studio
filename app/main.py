@@ -16,6 +16,7 @@ Endpoints:
     POST /api/project/{slug}/storyboard/{scene_id}/add-version  → agent registers a saved image
     POST /api/project/{slug}/storyboard/{scene_id}/navigate     → step through image versions
     POST /api/project/{slug}/storyboard/{scene_id}/approve      → approve current version + lock scene
+    POST /api/project/{slug}/storyboard/{scene_id}/unapprove    → unapprove any variant + unlock scene
     POST /api/project/{slug}/render         → trigger render (gated on all approved)
 
 Image paths in storyboard.json are always relative to the project directory
@@ -33,6 +34,8 @@ Usage:
 import asyncio
 import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -203,6 +206,7 @@ class SceneUpdate(BaseModel):
     visual_direction: str | None = None
     locked: bool | None = None
     approved: bool | None = None
+    caption_phrases: list[dict] | None = None
 
 
 @app.put("/api/project/{slug}/storyboard/{scene_id}")
@@ -304,6 +308,11 @@ class Navigate(BaseModel):
     delta: int = 0
 
 
+class RenderSceneRequest(BaseModel):
+    quality: str = "draft"  # "draft" or "high"
+    motion_override: str | None = None
+
+
 @app.post("/api/project/{slug}/storyboard/{scene_id}/navigate")
 async def navigate_version(slug: str, scene_id: int, body: Navigate):
     """Step between image versions for a scene."""
@@ -339,6 +348,32 @@ async def approve_current(slug: str, scene_id: int):
     return {"ok": True, "scene": scene_id}
 
 
+@app.post("/api/project/{slug}/storyboard/{scene_id}/unapprove")
+async def unapprove_scene(slug: str, scene_id: int):
+    """Clear any approved variant for the scene and unlock it.
+
+    Returns the path of the previously-approved image (if any) so callers
+    can record/restore context if needed.
+    """
+    sb_path, sb = load_storyboard(slug)
+    scene = find_scene(sb, scene_id)
+
+    versions = scene.get("images", [])
+    prev_approved_path = None
+    for v in versions:
+        if v.get("approved"):
+            prev_approved_path = v.get("path")
+            break
+
+    for v in versions:
+        v["approved"] = False
+    scene["locked"] = False
+
+    save_storyboard(sb_path, sb)
+    await sse_notify(slug, f"scene-unapproved:{scene_id}")
+    return {"ok": True, "scene": scene_id, "prev_approved_path": prev_approved_path}
+
+
 @app.post("/api/project/{slug}/render")
 async def trigger_render(slug: str):
     """Trigger assembly. Gates on all scenes having an approved image."""
@@ -353,6 +388,94 @@ async def trigger_render(slug: str):
     # TODO: actually call assemble.py in background
     await sse_notify(slug, "render-queued")
     return {"ok": True, "message": "Render queued"}
+
+
+# ---------------------------------------------------------------------------
+# Per-scene render preview
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/project/{slug}/storyboard/{scene_id}/render-scene")
+async def render_single_scene(slug: str, scene_id: int, body: RenderSceneRequest):
+    """Render a single scene for preview. Supports draft/high quality and
+    optional motion override. Caches results to avoid re-rendering when
+    nothing changed."""
+    # Validate scene exists
+    _, sb = load_storyboard(slug)
+    scene = find_scene(sb, scene_id)
+
+    renders_dir = project_dir(slug) / "renders"
+    renders_dir.mkdir(parents=True, exist_ok=True)
+    mp4_path = renders_dir / f"scene-{scene_id:02d}.mp4"
+    cache_path = renders_dir / f"scene-{scene_id:02d}-cache.json"
+
+    # Cache check
+    if mp4_path.exists() and cache_path.exists():
+        try:
+            cached = json.loads(cache_path.read_text())
+            if (cached.get("quality") == body.quality
+                    and cached.get("motion_override") == body.motion_override):
+                return {
+                    "ok": True,
+                    "path": str(mp4_path),
+                    "cached": True,
+                    "url": f"/projects/{slug}/renders/scene-{scene_id:02d}.mp4",
+                }
+        except (json.JSONDecodeError, KeyError):
+            pass  # Corrupt cache — re-render
+
+    # Build the CLI command
+    cmd = [
+        sys.executable,
+        "lib/assemble.py",
+        slug,
+        "--scene", str(scene_id),
+        "--quality", body.quality,
+    ]
+    if body.motion_override:
+        cmd += ["--motion", body.motion_override]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=str(WORKSPACE),
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(500, f"Render timed out for scene {scene_id}")
+
+    if result.returncode != 0:
+        raise HTTPException(500, f"Render failed for scene {scene_id}: {result.stderr[-2000:]}")
+
+    # Update cache
+    cache_path.write_text(json.dumps({
+        "quality": body.quality,
+        "motion_override": body.motion_override,
+    }, indent=2))
+
+    return {
+        "ok": True,
+        "path": str(mp4_path),
+        "cached": False,
+        "url": f"/projects/{slug}/renders/scene-{scene_id:02d}.mp4",
+    }
+
+
+@app.post("/api/project/{slug}/storyboard/{scene_id}/render-scene/delete")
+async def delete_scene_render(slug: str, scene_id: int):
+    """Delete a cached per-scene render and its cache metadata."""
+    renders_dir = project_dir(slug) / "renders"
+    mp4_path = renders_dir / f"scene-{scene_id:02d}.mp4"
+    cache_path = renders_dir / f"scene-{scene_id:02d}-cache.json"
+
+    if mp4_path.exists():
+        mp4_path.unlink()
+    if cache_path.exists():
+        cache_path.unlink()
+
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------

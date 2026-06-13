@@ -13,7 +13,7 @@
         }
       ],
       "current_image": 0,
-      "locked": false,
+      "locked": true,
       "_duration_secs": 27.552,
       "motion_preset": "drift_left",
       "caption_phrases": [
