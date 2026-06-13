@@ -634,6 +634,50 @@
     margin-top: 2px;
     line-height: 1;
   }
+
+  /* Assets tab gallery + undo toast */
+  .assets-toolbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .assets-gallery {
+    display: flex; gap: 8px; padding: 14px;
+    overflow-x: auto; flex-shrink: 0; min-height: 100px;
+  }
+  .assets-thumb {
+    width: 120px; flex-shrink: 0; cursor: pointer;
+    border: 2px solid transparent; border-radius: 6px;
+    overflow: hidden; transition: border-color 0.15s;
+    background: var(--surface); position: relative;
+  }
+  .assets-thumb:hover { border-color: var(--accent-dim); }
+  .assets-thumb.active { border-color: var(--green); }
+  .assets-thumb img { width: 100%; height: 80px; object-fit: cover; display: block; }
+  .assets-thumb-label { padding: 4px 6px; font-size: 10px; color: var(--text-muted); text-align: center; }
+  .assets-thumb .badge.approved-badge {
+    position: absolute; top: 4px; right: 4px;
+    background: var(--green); color: #0b0f14;
+    font-size: 9px; padding: 1px 5px; border-radius: 8px; font-weight: 700;
+  }
+  .assets-preview {
+    flex: 1; display: flex; align-items: center;
+    justify-content: center; padding: 14px;
+    background: #000; min-height: 200px; overflow: hidden;
+  }
+  .assets-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .toast {
+    position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 12px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 18px; z-index: 100;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5); font-size: 13px;
+    transition: opacity 0.3s;
+  }
+  .toast.hidden { display: none; }
+  #v3-tab-assets { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+  #v3-tab-assets.hidden { display: none; }
 </style>
 </head>
 <body>
@@ -681,7 +725,18 @@
           <button class="tab-btn" data-v3-tab="captions">Captions</button>
           <button class="tab-btn" data-v3-tab="render">Render</button>
         </div>
-        <div class="v3-tab-body" id="v3-tab-assets">Coming in v1.1.2</div>
+        <div class="v3-tab-body" id="v3-tab-assets">
+          <div class="assets-toolbar">
+            <button class="btn" id="assets-gen-btn">+ Gen</button>
+            <button class="btn" id="assets-regen-btn" disabled>&#x1f504; Regenerate with current prompts</button>
+            <button class="btn danger" id="assets-unapprove-btn" disabled>&#x274c; Unapprove</button>
+            <span class="badge" id="assets-status-badge" style="display:none"></span>
+          </div>
+          <div class="assets-gallery" id="assets-gallery"></div>
+          <div class="assets-preview" id="assets-preview" style="display:none">
+            <img id="assets-preview-img">
+          </div>
+        </div>
         <div class="v3-tab-body hidden" id="v3-tab-captions">Coming in v1.1.3</div>
         <div class="v3-tab-body hidden" id="v3-tab-render">Coming in v1.1.4</div>
       </div>
@@ -736,6 +791,11 @@
   </div>
 </footer>
 
+<div class="toast hidden" id="undo-toast">
+  <span id="undo-toast-msg">Unapproved.</span>
+  <button class="btn" id="undo-btn">Undo</button>
+</div>
+
 <script>
 'use strict';
 
@@ -758,6 +818,8 @@ const state = {
   selectedScene: null,     // currently focused scene for re-generate
   v3Mode: __v3,            // ?v3=1 enables per-scene workspace; default false = grid (no behavior change)
   v3Index: 0,              // current scene index when v3Mode (clamped on render)
+  undoTimeout: null,       // setTimeout handle for undo toast
+  undoSceneId: null,       // scene id for undo operation
 };
 
 const $ = (id) => document.getElementById(id);
@@ -930,6 +992,7 @@ function renderStoryboard() {
     if (state.v3Mode) {
       grid.style.display = '';
       $('v3-workspace-shell').style.display = 'none';
+      $('v3-scene-strip').style.display = 'none';
     }
     return;
   }
@@ -1384,6 +1447,26 @@ function renderV3SceneList() {
   }).join('');
 }
 
+function renderV3SceneStrip() {
+  const strip = $('v3-scene-strip');
+  if (!strip) return;
+  const scenes = state.scenes || [];
+  strip.innerHTML = scenes.map((scene, i) => {
+    const versions = scene.images || [];
+    const approved = versions.find((v) => v.approved);
+    const img = approved || (versions.length ? versions[0] : null);
+    const isActive = (i === state.v3Index);
+    const thumbInner = img
+      ? `<img src="${escHtml(imageUrl(img.path))}" alt="Scene ${scene.id}">`
+      : `<div class="strip-placeholder">&mdash;</div>`;
+    return `
+    <div class="strip-thumb${isActive ? ' active' : ''}" data-scene-index="${i}">
+      ${thumbInner}
+      <div class="strip-label">S${scene.id}</div>
+    </div>`;
+  }).join('');
+}
+
 function renderV3Workspace() {
   wireV3Events();
 
@@ -1391,13 +1474,17 @@ function renderV3Workspace() {
   $('storyboard-grid').style.display = 'none';
   $('v3-workspace-shell').style.display = 'flex';
 
+  $('v3-scene-strip').style.display = '';
   renderV3SceneList();
+  renderV3SceneStrip();
 
   const scene = state.scenes[state.v3Index];
   const text = (scene?.text || '').trim();
   $('v3-workspace-header').textContent = text
     ? `Scene ${scene.id} — ${text.slice(0, 80)}${text.length > 80 ? '…' : ''}`
     : `Scene ${scene.id}`;
+
+  renderV3Assets();
 }
 
 function switchV3Tab(name) {
@@ -1407,6 +1494,7 @@ function switchV3Tab(name) {
   ['assets', 'captions', 'render'].forEach((tab) => {
     $(`v3-tab-${tab}`).classList.toggle('hidden', tab !== name);
   });
+  if (name === 'assets') renderV3Assets();
 }
 
 function wireV3Events() {
@@ -1427,11 +1515,191 @@ function wireV3Events() {
     renderStoryboard();
   });
 
+  // Mini scene strip
+  $('v3-scene-strip').addEventListener('click', (e) => {
+    const thumb = e.target.closest('.strip-thumb');
+    if (!thumb) return;
+    const i = Number(thumb.dataset.sceneIndex);
+    if (!Number.isFinite(i)) return;
+    const scene = state.scenes[i];
+    state.v3Index = i;
+    state.selectedScene = scene ? scene.id : null;
+    updateRegenButton();
+    renderStoryboard();
+  });
+
   // Tab bar.
   $('v3-tab-bar').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-v3-tab]');
     if (btn) switchV3Tab(btn.dataset.v3Tab);
   });
+
+  // Assets tab: Gen button
+  $('assets-gen-btn').addEventListener('click', async () => {
+    const scene = state.scenes[state.v3Index];
+    if (scene) {
+      state.selectedScene = scene.id;
+      updateRegenButton();
+      await generateVersion(scene.id);
+      renderV3Assets();
+    }
+  });
+
+  // Assets tab: Regen button
+  $('assets-regen-btn').addEventListener('click', async () => {
+    const scene = state.scenes[state.v3Index];
+    if (!scene) return;
+    try {
+      await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene.id + '/image', { method: 'POST' });
+      setRenderMsg('Requested regen for scene ' + scene.id + '.');
+      renderV3Assets();
+    } catch (err) {
+      setRenderMsg(err.message, true);
+    }
+  });
+
+  // Assets tab: Unapprove button
+  $('assets-unapprove-btn').addEventListener('click', async () => {
+    const scene = state.scenes[state.v3Index];
+    if (!scene) return;
+    try {
+      const data = await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene.id + '/unapprove', { method: 'POST' });
+      showUndoToast(scene.id, data.prev_approved_path);
+      await loadProject(state.slug);
+    } catch (err) {
+      setRenderMsg(err.message, true);
+    }
+  });
+
+  // Undo toast button
+  $('undo-btn').addEventListener('click', async () => {
+    const sid = state.undoSceneId;
+    hideUndoToast();
+    if (sid != null) {
+      try {
+        await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + sid + '/approve', { method: 'POST' });
+        await loadProject(state.slug);
+      } catch (err) {
+        setRenderMsg(err.message, true);
+      }
+    }
+  });
+
+  // Assets gallery: click variant to approve (single-active-approve)
+  $('v3-tab-assets').addEventListener('click', async (e) => {
+    const thumb = e.target.closest('.assets-thumb');
+    if (!thumb) return;
+    const idx = Number(thumb.dataset.variantIndex);
+    if (!Number.isFinite(idx)) return;
+    const scene = state.scenes[state.v3Index];
+    if (!scene) return;
+
+    try {
+      // Navigate to this variant first
+      await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene.id + '/navigate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ delta: idx - (scene.current_image || 0) }),
+      });
+      // Then approve it (single-active-approve — server clears all other variants)
+      await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene.id + '/approve', { method: 'POST' });
+      await loadProject(state.slug);
+    } catch (err) {
+      setRenderMsg(err.message, true);
+    }
+  });
+}
+
+// ── Assets tab ──
+function renderV3Assets() {
+  const scene = state.scenes[state.v3Index];
+  if (!scene) return;
+
+  const versions = scene.images || [];
+  const gallery = $('assets-gallery');
+  const preview = $('assets-preview');
+
+  // Gallery
+  if (!versions.length) {
+    gallery.innerHTML = '<div class="empty">No images yet. Generate one using the Gen button above.</div>';
+    preview.style.display = 'none';
+  } else {
+    renderV3AssetsGallery(scene);
+    renderV3AssetsPreview(scene);
+    preview.style.display = 'flex';
+  }
+
+  // Button states
+  const hasApproved = versions.some(v => v.approved);
+  $('assets-unapprove-btn').disabled = !hasApproved;
+  $('assets-regen-btn').disabled = false;
+
+  // Badge
+  const badge = $('assets-status-badge');
+  if (hasApproved) {
+    badge.textContent = '\u2713 Approved';
+    badge.className = 'badge approved';
+    badge.style.display = 'inline-block';
+  } else if (versions.length > 0) {
+    badge.textContent = 'Draft';
+    badge.className = 'badge draft';
+    badge.style.display = 'inline-block';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function renderV3AssetsGallery(scene) {
+  const gallery = $('assets-gallery');
+  const versions = scene.images || [];
+  const idx = Math.min(scene.current_image || 0, versions.length - 1);
+
+  gallery.innerHTML = versions.map((v, i) => {
+    const active = i === idx ? ' active' : '';
+    const approved = v.approved ? '<span class="badge approved-badge">Approved</span>' : '';
+    return '<div class="assets-thumb' + active + '" data-variant-index="' + i + '">' +
+      '<img src="' + escHtml(imageUrl(v.path)) + '" alt="v' + (i + 1) + '">' +
+      approved +
+      '<div class="assets-thumb-label">v' + (i + 1) + '</div>' +
+      '</div>';
+  }).join('');
+}
+
+function renderV3AssetsPreview(scene) {
+  const img = $('assets-preview-img');
+  const versions = scene.images || [];
+  const idx = Math.min(scene.current_image || 0, versions.length - 1);
+  const v = versions[idx];
+  if (v) {
+    img.src = imageUrl(v.path);
+  }
+}
+
+function showUndoToast(sceneId, prevPath) {
+  if (state.undoTimeout) {
+    clearTimeout(state.undoTimeout);
+    state.undoTimeout = null;
+  }
+  state.undoSceneId = sceneId;
+  let msg = 'Unapproved.';
+  if (prevPath) {
+    const parts = prevPath.split('/');
+    msg = 'Unapproved ' + parts[parts.length - 1] + '.';
+  }
+  $('undo-toast-msg').textContent = msg;
+  $('undo-toast').classList.remove('hidden');
+  state.undoTimeout = setTimeout(() => {
+    hideUndoToast();
+  }, 5000);
+}
+
+function hideUndoToast() {
+  $('undo-toast').classList.add('hidden');
+  if (state.undoTimeout) {
+    clearTimeout(state.undoTimeout);
+    state.undoTimeout = null;
+  }
+  state.undoSceneId = null;
 }
 
 // ── Init ──
