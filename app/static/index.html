@@ -1130,6 +1130,33 @@
     padding: 2px 4px;
     font-size: 10px;
   }
+
+  .snap-guide {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-left: 1px dashed var(--accent);
+    pointer-events: none;
+    z-index: 30;
+    opacity: 0.85;
+  }
+
+  .save-error-banner {
+    background: #3d1a1a;
+    border-bottom: 2px solid var(--red);
+    color: var(--red);
+    padding: 6px 12px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .save-error-banner button.btn {
+    font-size: 11px;
+    padding: 2px 6px;
+  }
 </style>
 </head>
 <body>
@@ -2235,14 +2262,20 @@ let _currentPxPerSec = 40;
 let _lastTimelineSceneId = null;
 let _dragState = null;
 let _trimTooltip = null;
+let _undoStack = [];
+let _redoStack = [];
+const MAX_UNDO = 20;
+let _snapEnabled = true;
 
 function timelineZoom(factor) {
   _timelineZoom = Math.max(0.25, Math.min(4.0, _timelineZoom * factor));
+  localStorage.setItem('timeline-zoom', String(_timelineZoom));
   renderV3Timeline();
 }
 
 function timelineZoomFit() {
   _timelineZoom = 1.0;
+  localStorage.setItem('timeline-zoom', String(_timelineZoom));
   renderV3Timeline();
 }
 
@@ -2270,6 +2303,7 @@ function computeTimelineTotalDuration(assets, scene) {
 
 function computeSnapped(value, pxPerSec, excludeIndex) {
   if (!Number.isFinite(value)) value = 0;
+  if (!_snapEnabled) return value;
   const scene = state.scenes[state.v3Index];
   const assets = _timelineAssets || [];
   const totalD = computeTimelineTotalDuration(assets, scene);
@@ -2300,6 +2334,52 @@ function computeSnapped(value, pxPerSec, excludeIndex) {
   return Number(best.toFixed(2));
 }
 
+function snapshotBeforeMutate() {
+  if (!_timelineAssets) return;
+  _undoStack.push(JSON.parse(JSON.stringify(_timelineAssets)));
+  _redoStack = [];
+  if (_undoStack.length > MAX_UNDO) _undoStack.shift();
+}
+
+function undo() {
+  if (!_undoStack || !_undoStack.length || !_timelineAssets) return;
+  _redoStack.push(JSON.parse(JSON.stringify(_timelineAssets)));
+  _timelineAssets = _undoStack.pop();
+  if (_selectedAssetIndex != null && (!_timelineAssets || _selectedAssetIndex >= _timelineAssets.length)) {
+    _selectedAssetIndex = null;
+  }
+  markTimelineDirty();
+  renderV3Timeline();
+}
+
+function redo() {
+  if (!_redoStack || !_redoStack.length || !_timelineAssets) return;
+  _undoStack.push(JSON.parse(JSON.stringify(_timelineAssets)));
+  _timelineAssets = _redoStack.pop();
+  if (_selectedAssetIndex != null && (!_timelineAssets || _selectedAssetIndex >= _timelineAssets.length)) {
+    _selectedAssetIndex = null;
+  }
+  markTimelineDirty();
+  renderV3Timeline();
+}
+
+function showSnapGuide(timeSec) {
+  const inner = document.querySelector('.timeline-tracks-inner');
+  if (!inner) return;
+  const olds = inner.querySelectorAll('.snap-guide');
+  for (let i = 0; i < olds.length; i++) {
+    if (olds[i].parentNode) olds[i].parentNode.removeChild(olds[i]);
+  }
+  const g = document.createElement('div');
+  g.className = 'snap-guide';
+  const x = (timeSec || 0) * (_currentPxPerSec || 40);
+  g.style.left = (60 + x) + 'px';
+  inner.appendChild(g);
+  setTimeout(function() {
+    if (g.parentNode) g.parentNode.removeChild(g);
+  }, 150);
+}
+
 function markTimelineDirty() {
   _timelineDirty = true;
   if (_saveTimelineTimer) clearTimeout(_saveTimelineTimer);
@@ -2318,13 +2398,20 @@ async function persistTimeline() {
     });
     scene.asset_timeline = JSON.parse(JSON.stringify(_timelineAssets));
     _timelineDirty = false;
+    const banner = document.getElementById('save-error-banner');
+    if (banner) banner.style.display = 'none';
     const sts = document.querySelector('.timeline-props-header .save-status');
     if (sts) {
       sts.textContent = '✓';
       setTimeout(function() { if (sts && sts.textContent === '✓') sts.textContent = ''; }, 1200);
     }
   } catch (err) {
-    setRenderMsg('Timeline save failed: ' + err.message, true);
+    const banner = document.getElementById('save-error-banner');
+    if (banner) {
+      banner.style.display = 'flex';
+    } else {
+      setRenderMsg('Timeline save failed: ' + err.message, true);
+    }
     const sts = document.querySelector('.timeline-props-header .save-status');
     if (sts) sts.textContent = 'err';
   }
@@ -2670,6 +2757,7 @@ function wireTimelineCaptions(propsRoot, ai) {
   if (addBtn) {
     addBtn.addEventListener('click', function() {
       if (!asset.caption_phrases) asset.caption_phrases = [];
+      snapshotBeforeMutate();
       asset.caption_phrases.push({ text: '', role: 'display', time_in: 0, time_out: 1 });
       markTimelineDirty();
       renderV3Timeline();
@@ -2696,10 +2784,12 @@ function wireTimelineCaptions(propsRoot, ai) {
         markTimelineDirty();
       });
       inp.addEventListener('change', function() { markTimelineDirty(); });
+      inp.addEventListener('focus', function() { snapshotBeforeMutate(); });
     }
     const remBtn = phraseEl.querySelector('[data-action="remove-phrase"]');
     if (remBtn) {
       remBtn.addEventListener('click', function() {
+        snapshotBeforeMutate();
         asset.caption_phrases.splice(pi, 1);
         markTimelineDirty();
         renderV3Timeline();
@@ -2724,6 +2814,7 @@ function wireTimelineProps(root) {
   const rem = props.querySelector('[data-action="remove-asset"]');
   if (rem) {
     rem.addEventListener('click', function() {
+      snapshotBeforeMutate();
       _timelineAssets.splice(ai, 1);
       _selectedAssetIndex = null;
       markTimelineDirty();
@@ -2736,6 +2827,7 @@ function wireTimelineProps(root) {
     const prop = el.dataset.prop;
     el.addEventListener('input', function() { applyPropChange(ai, prop, el.value, props); });
     el.addEventListener('change', function() { applyPropChange(ai, prop, el.value, props); });
+    el.addEventListener('focus', function() { snapshotBeforeMutate(); });
   }
   const range = props.querySelector('[data-prop="opacity-range"]');
   const numi = props.querySelector('[data-prop="opacity-num"]');
@@ -2784,6 +2876,7 @@ function startDragTimeline(evt, blockEl, ai, mode, side) {
   evt.preventDefault();
   const asset = _timelineAssets[ai];
   if (!asset) return;
+  snapshotBeforeMutate();
   const pxPerSec = _currentPxPerSec;
   const labelColW = 60;
   const inner = document.querySelector('.timeline-tracks-inner') || document.querySelector('.timeline-tracks');
@@ -2857,6 +2950,12 @@ function handleDragMove(moveEvt) {
     toSnap = newTimeIn + newDur;
   }
   const snapped = computeSnapped(toSnap, ds.pxPerSec, ds.ai);
+  if (_snapEnabled) {
+    const threshold = 10 / ds.pxPerSec;
+    if (Math.abs(snapped - toSnap) > 1e-6 && Math.abs(snapped - toSnap) <= threshold + 1e-6) {
+      showSnapGuide(snapped);
+    }
+  }
   if (ds.mode === 'move') {
     newTimeIn = snapped;
   } else if (ds.mode === 'trim-left') {
@@ -2904,6 +3003,20 @@ function renderV3Timeline() {
     return;
   }
 
+  // Restore persisted prefs (zoom, snap) once
+  if (!renderV3Timeline._prefsRestored) {
+    renderV3Timeline._prefsRestored = true;
+    try {
+      const savedZoom = localStorage.getItem('timeline-zoom');
+      if (savedZoom != null) {
+        const z = parseFloat(savedZoom);
+        if (Number.isFinite(z)) _timelineZoom = Math.max(0.25, Math.min(4.0, z));
+      }
+      const savedSnap = localStorage.getItem('timeline-snap');
+      if (savedSnap !== null) _snapEnabled = (savedSnap === 'true');
+    } catch (e) {}
+  }
+
   // Init local mutable copy when entering for this scene.
   // If dirty + same scene id: keep local edits (survive re-renders/partial reloads).
   // Else: (re)clone from state.scenes (picks up server data after reloads) and preserve selection when possible.
@@ -2916,14 +3029,18 @@ function renderV3Timeline() {
     _timelineDirty = false;
     _selectedAssetIndex = null;
     _lastTimelineSceneId = currentSceneId;
+    _undoStack = [];
+    _redoStack = [];
   } else if (!_timelineDirty) {
     // same scene, clean: refresh from latest scene data (e.g. after other SSE reloadCurrent) but keep selection
     const prevSel = _selectedAssetIndex;
     _timelineAssets = JSON.parse(JSON.stringify(sceneTl));
     _timelineAssets.forEach(normalizeAsset);
     if (prevSel != null && prevSel < _timelineAssets.length) _selectedAssetIndex = prevSel;
+    _undoStack = [];
+    _redoStack = [];
   }
-  // else: dirty + same scene -> keep _timelineAssets + selection as-is (local edits win)
+  // else: dirty + same scene -> keep _timelineAssets + selection + undo/redo stacks as-is (local edits win)
 
   const assets = _timelineAssets || [];
   const pxPerSec = _timelineZoom * 40;
@@ -2933,12 +3050,18 @@ function renderV3Timeline() {
   const rulerWidth = Math.max(trackAreaWidth, 400);
   const labelColW = 60;
 
+  const canUndo = _undoStack.length > 0;
+  const canRedo = _redoStack.length > 0;
+
   // Build zoom bar
   const zoomHtml =
     '<div class="timeline-zoom-bar">' +
       '<button class="btn" style="font-size:14px;padding:2px 8px" data-timeline-action="zoom-out">−</button>' +
       '<button class="btn" style="font-size:14px;padding:2px 8px" data-timeline-action="zoom-in">+</button>' +
       '<button class="btn" style="font-size:11px;padding:2px 8px" data-timeline-action="zoom-fit">Fit</button>' +
+      '<button class="btn" style="font-size:11px;padding:2px 8px" data-timeline-action="snap-toggle">Snap: ' + (_snapEnabled ? 'ON' : 'OFF') + '</button>' +
+      '<button class="btn" style="font-size:14px;padding:2px 8px;opacity:' + (canUndo ? '1' : '0.4') + '"' + (canUndo ? '' : ' disabled') + ' data-timeline-action="undo">↩</button>' +
+      '<button class="btn" style="font-size:14px;padding:2px 8px;opacity:' + (canRedo ? '1' : '0.4') + '"' + (canRedo ? '' : ' disabled') + ' data-timeline-action="redo">↪</button>' +
       '<span style="margin-left:auto">Duration: ' + totalDuration.toFixed(1) + 's</span>' +
     '</div>';
 
@@ -3017,6 +3140,7 @@ function renderV3Timeline() {
   container.innerHTML =
     '<div class="timeline-shell">' +
       '<div class="timeline-main">' +
+        '<div class="save-error-banner" id="save-error-banner" style="display:none">⚠ Timeline save failed — <button class="btn" id="retry-save-btn">Retry</button><button class="btn" id="dismiss-err-btn">✕</button></div>' +
         zoomHtml +
         previewHtml +
         tracksContainerHtml +
@@ -3026,13 +3150,20 @@ function renderV3Timeline() {
       propsHtml +
     '</div>';
 
-  // Wire zoom buttons
+  // Wire zoom buttons + snap + undo/redo
   container.querySelectorAll('[data-timeline-action]').forEach(function(btn) {
     btn.addEventListener('click', function() {
       const action = btn.dataset.timelineAction;
       if (action === 'zoom-in') timelineZoom(1.3);
       else if (action === 'zoom-out') timelineZoom(0.7);
       else if (action === 'zoom-fit') timelineZoomFit();
+      else if (action === 'snap-toggle') {
+        _snapEnabled = !_snapEnabled;
+        localStorage.setItem('timeline-snap', String(_snapEnabled));
+        renderV3Timeline();
+      }
+      else if (action === 'undo') undo();
+      else if (action === 'redo') redo();
     });
   });
 
@@ -3044,6 +3175,15 @@ function renderV3Timeline() {
   const pdel = container.querySelector('#preview-delete-btn');
   if (pdel) pdel.addEventListener('click', previewDelete);
   // quality select needs no on-change handler (used at render time)
+
+  // Wire save-error banner controls
+  const errBanner = container.querySelector('#save-error-banner');
+  if (errBanner) {
+    const retryBtn = container.querySelector('#retry-save-btn');
+    if (retryBtn) retryBtn.addEventListener('click', function() { persistTimeline(); });
+    const dismissBtn = container.querySelector('#dismiss-err-btn');
+    if (dismissBtn) dismissBtn.addEventListener('click', function() { errBanner.style.display = 'none'; });
+  }
 
   // Wire block pointer interactions (drag + select)
   const blocks = container.querySelectorAll('.timeline-block');
@@ -3124,6 +3264,7 @@ function renderV3Timeline() {
       if (dropX < 0) dropX = 0;
       let timeIn = dropX / _currentPxPerSec;
       timeIn = computeSnapped(timeIn, _currentPxPerSec, -1);
+      snapshotBeforeMutate();
       const newAsset = {
         type: 'still',
         layer: 0,
@@ -3174,16 +3315,71 @@ function renderV3Timeline() {
     });
   }
 
-  // Esc to deselect (guard to wire once)
+  // Keyboard shortcuts (guard to wire once)
   if (!renderV3Timeline._keysWired) {
     renderV3Timeline._keysWired = true;
     document.addEventListener('keydown', function(e) {
+      const ttab = $('v3-tab-timeline');
+      if (!ttab || ttab.classList.contains('hidden')) return;
+
+      const ae = document.activeElement;
+      const isEditing = ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable);
+
       if (e.key === 'Escape') {
-        const ttab = $('v3-tab-timeline');
-        if (ttab && !ttab.classList.contains('hidden') && _selectedAssetIndex != null) {
+        if (!isEditing && _selectedAssetIndex != null) {
           _selectedAssetIndex = null;
           renderV3Timeline();
         }
+        return;
+      }
+
+      if (isEditing) return;  // arrows, del, z etc only when no input focused
+
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        if (e.shiftKey) redo(); else undo();
+        return;
+      }
+
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        if (_selectedAssetIndex == null || !_timelineAssets || !_timelineAssets[_selectedAssetIndex]) return;
+        e.preventDefault();
+        const asset = _timelineAssets[_selectedAssetIndex];
+        const sc = state.scenes[state.v3Index];
+        const tot = computeTimelineTotalDuration(_timelineAssets, sc);
+        const dur = asset.duration_secs || 0;
+        const maxTin = Math.max(0, tot - dur);
+        snapshotBeforeMutate();
+        let newTin = (asset.time_in || 0) + (e.key === 'ArrowLeft' ? -0.1 : 0.1);
+        if (newTin < 0) newTin = 0;
+        if (newTin > maxTin) newTin = maxTin;
+        asset.time_in = Number(newTin.toFixed(2));
+        if (_snapEnabled) {
+          const sn = computeSnapped(asset.time_in, _currentPxPerSec || 40, _selectedAssetIndex);
+          asset.time_in = Number(Math.min(maxTin, Math.max(0, sn)).toFixed(2));
+        }
+        markTimelineDirty();
+        renderV3Timeline();
+        return;
+      }
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (_selectedAssetIndex != null && _timelineAssets && _timelineAssets[_selectedAssetIndex]) {
+          e.preventDefault();
+          snapshotBeforeMutate();
+          _timelineAssets.splice(_selectedAssetIndex, 1);
+          _selectedAssetIndex = null;
+          markTimelineDirty();
+          renderV3Timeline();
+        }
+        return;
+      }
+
+      if (e.key === 'Home') {
+        e.preventDefault();
+        const ph = document.querySelector('.timeline-playhead');
+        if (ph) ph.style.left = '60px';
+        return;
       }
     });
   }
