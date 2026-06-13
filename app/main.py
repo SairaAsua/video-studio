@@ -356,6 +356,160 @@ async def trigger_render(slug: str):
 
 
 # ---------------------------------------------------------------------------
+# Prompt templates (editable, per-project)
+# ---------------------------------------------------------------------------
+# Persisted to projects/<slug>/prompts.json. The agent (or the user, via
+# this dashboard) can edit them in place. When generating an image or
+# video, the agent prepends/uses these templates to build the actual
+# prompt that goes to the model. The agent listens for SSE
+# `image-requested:<scene_id>` events and reads this file to build the
+# prompt; same shape for video.
+
+DEFAULT_PROMPTS = {
+    "image": {
+        "beacon_world": (
+            "Premium contemplative wellness aesthetic. Costa Rica tropical "
+            "setting or warm-lit interior. Substance-free, non-ceremonial, "
+            "no new-age imagery, no crystals or sound-bath cliches. Golden "
+            "hour outdoor light or a single warm indoor light source "
+            "against deep shadow. Materials: tropical hardwood, bamboo, "
+            "raw linen, volcanic stone. Color palette: deep near-black "
+            "backgrounds, warm gold/amber accent (#c9a03a), muted steel "
+            "blue secondary, soft white highlights. A geometric wooden-"
+            "and-metal device (the Beacon) may be present as a "
+            "sculptural anchor — solid, not flashy. No human faces "
+            "visible; only backs of heads, silhouettes, or hands in "
+            "stillness. Atmosphere of slow attention and care, not "
+            "celebration."
+        ),
+        "video_style": (
+            "Cinematic widescreen composition, 16:9, 1280x720 or higher. "
+            "Contemplative stillness with a sense of held breath. Rule-"
+            "of-thirds subject placement leaving room for text overlay "
+            "in upper third. Three depth planes (foreground/midground/"
+            "background) with atmospheric layering — mist, soft focus, "
+            "or out-of-focus foreground. Negative space is intentional, "
+            "not empty. The image should feel like a single frame from "
+            "a slow-moving documentary about a careful practice, not a "
+            "stock photo. No on-screen text, no UI elements, no logos, "
+            "no watermarks."
+        ),
+        "scene_template": (
+            "[BEACON_WORLD]\n{beacon_world}\n\n[VIDEO_STYLE]\n{video_style}\n\n"
+            "[SCENE]\n{visual_direction}"
+        ),
+    },
+    "video": {
+        "beacon_world": (
+            "Premium contemplative wellness aesthetic, cinematic motion. "
+            "Costa Rica tropical setting or warm-lit interior. Substance-"
+            "free, non-ceremonial, no new-age imagery. Golden hour or a "
+            "single warm light source. Materials: tropical hardwood, "
+            "bamboo, raw linen, volcanic stone. Color palette: deep "
+            "near-black, warm gold/amber (#c9a03a), muted steel blue, "
+            "soft white. A geometric wooden-and-metal device (the "
+            "Beacon) may be present as a sculptural anchor. No human "
+            "faces visible."
+        ),
+        "scene_template": (
+            "[BEACON_WORLD]\n{beacon_world}\n\n[SCENE]\n{visual_direction}\n\n"
+            "[MOTION]\n{motion_hint}"
+        ),
+        "motion_hints": {
+            "drift_left": "Slow lateral camera drift to the left, subtle push-in. World passes by.",
+            "drift_right": "Slow lateral camera drift to the right, subtle push-in. World passes by.",
+            "zoom_in": "Slow push-in toward the focal subject. Attention gathers.",
+            "push_in_left": "Slow push-in with leftward drift. Subjective, intimate, like leaning in.",
+            "push_in_right": "Slow push-in with rightward drift. Subjective, intimate, like leaning in.",
+            "parallax_lr": "Slow zoom in with lateral drift left. Depth between near and far planes.",
+            "parallax_rl": "Slow zoom in with lateral drift right. Depth between near and far planes.",
+        },
+    },
+}
+
+
+def _prompts_path(slug: str) -> Path:
+    return PROJECTS / slug / "prompts.json"
+
+
+@app.get("/api/project/{slug}/prompts")
+async def get_prompts(slug: str):
+    """Read prompt templates for this project. If absent, return defaults."""
+    slug = slug.strip()
+    project_dir(slug)  # validate
+    p = _prompts_path(slug)
+    if not p.exists():
+        return {"prompts": DEFAULT_PROMPTS, "is_default": True}
+    return {"prompts": json.loads(p.read_text()), "is_default": False}
+
+
+@app.put("/api/project/{slug}/prompts")
+async def put_prompts(slug: str, body: dict):
+    """Persist prompt templates for this project."""
+    slug = slug.strip()
+    project_dir(slug)  # validate
+    if not isinstance(body, dict) or "prompts" not in body:
+        raise HTTPException(400, "Body must be {\"prompts\": {...}}")
+    _prompts_path(slug).write_text(json.dumps(body["prompts"], indent=2))
+    return {"ok": True}
+
+
+@app.delete("/api/project/{slug}/prompts")
+async def delete_prompts(slug: str):
+    """Reset prompt templates to defaults (delete the per-project file)."""
+    slug = slug.strip()
+    project_dir(slug)  # validate
+    p = _prompts_path(slug)
+    if p.exists():
+        p.unlink()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Exports (list videos in projects/<slug>/exports/ for the dashboard)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/project/{slug}/exports")
+async def list_exports(slug: str):
+    """List renderable video files under projects/<slug>/exports/.
+
+    Returns each file's name, size, mtime, and the URL the dashboard
+    uses to open it (via the /projects/{slug}/... static mount).
+    """
+    slug = slug.strip()
+    base = project_dir(slug) / "exports"
+    base.mkdir(parents=True, exist_ok=True)
+    out = []
+    # Walk one level deep so we can also surface subdirs like exports/tests/
+    for root in [base, *base.iterdir()] if base.exists() else []:
+        if root.is_file():
+            files = [root]
+        elif root.is_dir():
+            files = list(root.rglob("*"))
+        else:
+            continue
+        for f in files:
+            if not f.is_file():
+                continue
+            ext = f.suffix.lower()
+            if ext not in (".mp4", ".webm", ".mov", ".gif"):
+                continue
+            rel = f.relative_to(PROJECTS).as_posix()
+            stat = f.stat()
+            out.append({
+                "name": f.name,
+                "path": rel,
+                "url": f"/projects/{rel}",
+                "size": stat.st_size,
+                "mtime": stat.st_mtime,
+                "subdir": f.parent.relative_to(base).as_posix() if f.parent != base else "",
+            })
+    # Sort newest first
+    out.sort(key=lambda x: x["mtime"], reverse=True)
+    return {"exports": out}
+
+
+# ---------------------------------------------------------------------------
 # Static mounts
 # ---------------------------------------------------------------------------
 

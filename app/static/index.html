@@ -134,6 +134,7 @@
     display: flex;
     flex-direction: column;
     background: var(--bg);
+    min-width: 360px;
   }
   .storyboard-grid {
     flex: 1;
@@ -189,6 +190,197 @@
   .scene-image .placeholder.generating {
     color: var(--accent);
   }
+
+  /* ── Pane: Tools (Prompts + Exports) ── */
+  .pane-tools {
+    width: 32%;
+    min-width: 360px;
+    max-width: 480px;
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+  }
+  .tools-tabs {
+    display: flex;
+    gap: 4px;
+  }
+  .tab-btn {
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active {
+    background: var(--bg);
+    color: var(--accent);
+    border-color: var(--border);
+  }
+  .tools-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .tools-content.hidden { display: none; }
+  .prompts-toolbar, .exports-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .prompts-toolbar select {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+    font-family: inherit;
+  }
+  .prompt-status {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+  .prompt-status.dirty { color: var(--accent); font-style: normal; }
+  .prompts-editor {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px;
+  }
+  .prompts-editor .field {
+    margin-bottom: 16px;
+  }
+  .prompts-editor .field-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+  .prompts-editor .field-help {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin: 4px 0 0;
+    line-height: 1.4;
+  }
+  .prompts-editor textarea {
+    width: 100%;
+    min-height: 120px;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    resize: vertical;
+    outline: none;
+  }
+  .prompts-editor textarea:focus {
+    border-color: var(--accent-dim);
+    background: rgba(201, 160, 58, 0.03);
+  }
+  .prompts-editor textarea.template {
+    min-height: 80px;
+    color: var(--text-muted);
+    background: var(--bg);
+    cursor: default;
+  }
+  .prompts-editor .motion-hints {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .prompts-editor .motion-hint-row {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 8px;
+    align-items: start;
+  }
+  .prompts-editor .motion-hint-row .name {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--accent);
+    padding-top: 8px;
+  }
+  .prompts-editor .motion-hint-row textarea {
+    min-height: 50px;
+  }
+  .exports-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px;
+  }
+  .export-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+  .export-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    gap: 8px;
+  }
+  .export-item-name {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text);
+    word-break: break-all;
+  }
+  .export-item-meta {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .export-item-subdir {
+    font-size: 10px;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+  }
+  .export-item video {
+    width: 100%;
+    max-height: 240px;
+    background: #000;
+    border-radius: 4px;
+    display: block;
+  }
+  .export-item-actions {
+    margin-top: 8px;
+    display: flex;
+    gap: 6px;
+  }
+  .export-item-actions .btn {
+    font-size: 11px;
+    padding: 3px 8px;
+  }
+  .empty {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 12px;
+    padding: 24px;
+  }
+
   .spinner {
     display: inline-block;
     width: 16px; height: 16px;
@@ -338,6 +530,45 @@
       <div class="scene-card empty">Select a project to load storyboard</div>
     </div>
   </section>
+
+  <!-- Tools Pane: Prompts + Exports, tabbed -->
+  <section class="pane-tools">
+    <div class="pane-header">
+      <span>🛠 TOOLS</span>
+      <div class="tools-tabs">
+        <button class="tab-btn active" data-tools-tab="prompts">Prompts</button>
+        <button class="tab-btn" data-tools-tab="exports">Exports</button>
+      </div>
+    </div>
+
+    <!-- Prompts tab -->
+    <div class="tools-content" id="tools-prompts" data-pane="prompts">
+      <div class="prompts-toolbar">
+        <select id="prompts-kind">
+          <option value="image">Image prompts</option>
+          <option value="video">Video prompts</option>
+        </select>
+        <span class="prompt-status" id="prompts-status">default</span>
+        <button class="btn" id="prompts-reset-btn" title="Reset to defaults">Reset</button>
+        <button class="btn primary" id="prompts-save-btn" disabled>Save</button>
+        <button class="btn" id="prompts-regen-btn" disabled>Re-generate selected scene</button>
+      </div>
+      <div class="prompts-editor" id="prompts-editor">
+        <div class="empty">Select a project to load prompts</div>
+      </div>
+    </div>
+
+    <!-- Exports tab -->
+    <div class="tools-content hidden" id="tools-exports" data-pane="exports">
+      <div class="exports-toolbar">
+        <span class="exports-count" id="exports-count">0 files</span>
+        <button class="btn" id="exports-refresh-btn">Refresh</button>
+      </div>
+      <div class="exports-list" id="exports-list">
+        <div class="empty">Select a project to list exports</div>
+      </div>
+    </div>
+  </section>
 </main>
 
 <footer>
@@ -361,6 +592,9 @@ const state = {
   generating: new Set(),   // scene ids with a pending generation
   originalScript: '',
   loadToken: 0,            // guards against out-of-order loadProject responses
+  prompts: null,           // { image: {...}, video: {...} } loaded from /api/.../prompts
+  promptsDirty: false,     // user edited but not saved
+  selectedScene: null,     // currently focused scene for re-generate
 };
 
 const $ = (id) => document.getElementById(id);
@@ -493,6 +727,10 @@ async function loadProject(slug) {
     renderStoryboard();
     updateRenderGate();
     setStatus('connected');
+
+    // Side panels: load prompts + exports for this project
+    await loadPrompts();
+    await loadExports();
   } catch (err) {
     setStatus(err.message, 'error');
     console.error('loadProject failed:', err);
@@ -697,6 +935,224 @@ function wireEvents() {
     const id = Number(e.target.closest('[data-scene-id]')?.dataset.sceneId);
     if (Number.isFinite(id)) updateSceneText(id, e.target.value);
   });
+
+  // Track selected scene for "Re-generate selected scene" in Prompts pane
+  grid.addEventListener('click', (e) => {
+    const card = e.target.closest('[data-scene-id]');
+    if (!card) return;
+    const id = Number(card.dataset.sceneId);
+    if (!Number.isFinite(id)) return;
+    state.selectedScene = id;
+    updateRegenButton();
+  });
+
+  // Tools pane — tab switching
+  document.querySelectorAll('[data-tools-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => switchToolsTab(btn.dataset.toolsTab));
+  });
+
+  // Prompts pane
+  $('prompts-kind').addEventListener('change', () => renderPromptsEditor());
+  $('prompts-save-btn').addEventListener('click', savePrompts);
+  $('prompts-reset-btn').addEventListener('click', resetPrompts);
+  $('prompts-regen-btn').addEventListener('click', regenerateSelected);
+
+  // Exports pane
+  $('exports-refresh-btn').addEventListener('click', () => loadExports());
+}
+
+// ── Tools pane: Prompts ──
+
+function switchToolsTab(name) {
+  document.querySelectorAll('[data-tools-tab]').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.toolsTab === name);
+  });
+  document.querySelectorAll('.tools-content').forEach((c) => {
+    c.classList.toggle('hidden', c.dataset.pane !== name);
+  });
+}
+
+async function loadPrompts() {
+  if (!state.slug) return;
+  try {
+    const data = await api(`/api/project/${encodeURIComponent(state.slug)}/prompts`);
+    state.prompts = data.prompts;
+    state.promptsDirty = false;
+    $('prompts-status').textContent = data.is_default ? 'default' : 'custom';
+    $('prompts-status').classList.remove('dirty');
+    $('prompts-save-btn').disabled = true;
+    renderPromptsEditor();
+    updateRegenButton();
+  } catch (err) {
+    console.error('loadPrompts failed:', err);
+  }
+}
+
+function renderPromptsEditor() {
+  const container = $('prompts-editor');
+  if (!state.prompts) {
+    container.innerHTML = '<div class="empty">No project loaded</div>';
+    return;
+  }
+  const kind = $('prompts-kind').value; // 'image' | 'video'
+  const data = state.prompts[kind];
+  if (!data) {
+    container.innerHTML = `<div class="empty">No ${kind} prompt templates</div>`;
+    return;
+  }
+
+  const fields = [];
+  for (const [name, value] of Object.entries(data)) {
+    if (name === 'motion_hints') {
+      const rows = Object.entries(value).map(([hintName, hintText]) => `
+        <div class="motion-hint-row">
+          <span class="name">${escHtml(hintName)}</span>
+          <textarea data-path="${kind}.motion_hints.${hintName}">${escHtml(hintText)}</textarea>
+        </div>
+      `).join('');
+      fields.push(`
+        <div class="field">
+          <label class="field-label">Motion Hints (video)</label>
+          <p class="field-help">Per-preset motion language. Pick one per scene video gen.</p>
+          <div class="motion-hints">${rows}</div>
+        </div>
+      `);
+    } else if (name.endsWith('_template')) {
+      fields.push(`
+        <div class="field">
+          <label class="field-label">${escHtml(name)} (template, read-only)</label>
+          <p class="field-help">Use <code>{visual_direction}</code>, <code>{beacon_world}</code>, etc. as placeholders.</p>
+          <textarea class="template" readonly>${escHtml(value)}</textarea>
+        </div>
+      `);
+    } else {
+      const helpText = name === 'beacon_world'
+        ? 'Brand-level canon. See DESIGN.md §1. Reused across all scenes.'
+        : name === 'video_style'
+          ? 'Video-specific visual treatment. See DESIGN.md §2.'
+          : '';
+      fields.push(`
+        <div class="field">
+          <label class="field-label">${escHtml(name)}</label>
+          <p class="field-help">${escHtml(helpText)}</p>
+          <textarea data-path="${kind}.${name}">${escHtml(value)}</textarea>
+        </div>
+      `);
+    }
+  }
+  container.innerHTML = fields.join('');
+
+  container.querySelectorAll('textarea[data-path]').forEach((ta) => {
+    ta.addEventListener('input', () => {
+      const path = ta.dataset.path.split('.');
+      let cursor = state.prompts;
+      for (let i = 0; i < path.length - 1; i++) cursor = cursor[path[i]];
+      const last = path[path.length - 1];
+      if (cursor[last] !== ta.value) {
+        cursor[last] = ta.value;
+        state.promptsDirty = true;
+        $('prompts-status').textContent = 'unsaved changes';
+        $('prompts-status').classList.add('dirty');
+        $('prompts-save-btn').disabled = false;
+      }
+    });
+  });
+}
+
+async function savePrompts() {
+  if (!state.slug || !state.prompts) return;
+  try {
+    await api(`/api/project/${encodeURIComponent(state.slug)}/prompts`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompts: state.prompts }),
+    });
+    state.promptsDirty = false;
+    $('prompts-status').textContent = 'custom';
+    $('prompts-status').classList.remove('dirty');
+    $('prompts-save-btn').disabled = true;
+    setRenderMsg('Prompts saved ✓');
+  } catch (err) {
+    setRenderMsg(`Save failed: ${err.message}`, true);
+  }
+}
+
+async function resetPrompts() {
+  if (!state.slug) return;
+  if (state.promptsDirty &&
+      !confirm('Discard unsaved changes and reset to defaults?')) return;
+  try {
+    await fetch(`/api/project/${encodeURIComponent(state.slug)}/prompts`, {
+      method: 'DELETE',
+    });
+    await loadPrompts();
+    setRenderMsg('Prompts reset to defaults ✓');
+  } catch (err) {
+    setRenderMsg(`Reset failed: ${err.message}`, true);
+  }
+}
+
+function updateRegenButton() {
+  $('prompts-regen-btn').disabled = !(
+    state.slug && state.selectedScene != null && !state.promptsDirty
+  );
+  $('prompts-regen-btn').textContent = state.selectedScene != null
+    ? `Re-generate scene ${state.selectedScene}`
+    : 'Re-generate selected scene';
+}
+
+async function regenerateSelected() {
+  if (!state.slug || state.selectedScene == null) return;
+  try {
+    await api(
+      `/api/project/${encodeURIComponent(state.slug)}/storyboard/${state.selectedScene}/image`,
+      { method: 'POST' }
+    );
+    setRenderMsg(`Requested regen for scene ${state.selectedScene}. Agent will pick up via SSE.`);
+  } catch (err) {
+    setRenderMsg(`Regen failed: ${err.message}`, true);
+  }
+}
+
+// ── Tools pane: Exports ──
+
+async function loadExports() {
+  if (!state.slug) return;
+  const list = $('exports-list');
+  list.innerHTML = '<div class="empty">Loading…</div>';
+  try {
+    const data = await api(`/api/project/${encodeURIComponent(state.slug)}/exports`);
+    $('exports-count').textContent = `${data.exports.length} files`;
+    if (data.exports.length === 0) {
+      list.innerHTML = '<div class="empty">No exports yet. Render the project to generate videos here.</div>';
+      return;
+    }
+    list.innerHTML = data.exports.map(renderExportItem).join('');
+  } catch (err) {
+    list.innerHTML = `<div class="empty">Error: ${escHtml(err.message)}</div>`;
+  }
+}
+
+function renderExportItem(exp) {
+  const sizeMB = (exp.size / (1024 * 1024)).toFixed(1);
+  const when = new Date(exp.mtime * 1000).toLocaleString();
+  const subdir = exp.subdir
+    ? `<div class="export-item-subdir">${escHtml(exp.subdir)}/</div>`
+    : '';
+  return `
+    <div class="export-item" data-path="${escHtml(exp.path)}">
+      ${subdir}
+      <div class="export-item-header">
+        <span class="export-item-name">${escHtml(exp.name)}</span>
+        <span class="export-item-meta">${sizeMB} MB · ${escHtml(when)}</span>
+      </div>
+      <video controls preload="metadata" src="${escHtml(exp.url)}"></video>
+      <div class="export-item-actions">
+        <a class="btn" href="${escHtml(exp.url)}" target="_blank" rel="noopener">Open in new tab</a>
+        <a class="btn" href="${escHtml(exp.url)}" download>Download</a>
+      </div>
+    </div>
+  `;
 }
 
 // ── Init ──
