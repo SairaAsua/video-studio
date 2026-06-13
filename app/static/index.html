@@ -257,6 +257,49 @@
     font-style: italic;
   }
   .prompt-status.dirty { color: var(--accent); font-style: normal; }
+
+  /* Prominent toolbar actions (scoped so global .btn is unchanged) */
+  .prompts-toolbar select {
+    padding: 6px 10px;
+  }
+  .prompts-toolbar .btn {
+    font-size: 12px;
+    padding: 7px 16px;
+    font-weight: 600;
+  }
+  /* Reset = tertiary: lowest visual weight */
+  .prompts-toolbar #prompts-reset-btn {
+    background: transparent;
+    color: var(--text-muted);
+    border-color: var(--border);
+    font-weight: 500;
+  }
+  .prompts-toolbar #prompts-reset-btn:hover {
+    background: #1e3040;
+    color: #fff;
+    border-color: var(--accent);
+  }
+  /* Regen = secondary */
+  .prompts-toolbar #prompts-regen-btn:hover {
+    background: #36506a;
+  }
+  /* Save = primary: largest and boldest */
+  .prompts-toolbar #prompts-save-btn {
+    font-size: 13px;
+    padding: 8px 22px;
+    font-weight: 700;
+    box-shadow: 0 1px 4px rgba(201,160,58,0.35);
+  }
+  .prompts-toolbar #prompts-save-btn:hover {
+    background: #e0ba52;
+  }
+  .prompts-toolbar .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: auto;
+    box-shadow: none;
+  }
+
   .prompts-editor {
     flex: 1;
     overflow-y: auto;
@@ -496,6 +539,7 @@
   }
   footer .render-status { display: flex; align-items: center; gap: 8px; }
   footer .render-status .error { color: var(--red); }
+  #render-btn.hidden { display: none; }
 
   /* v3 per-scene workspace (default as of v2.0; pass ?v1=1 for legacy grid) */
   .storyboard-grid.v3-workspace {
@@ -637,6 +681,24 @@
     text-align: center;
     margin-top: 2px;
     line-height: 1;
+  }
+  /* selection legend below the mini-strip: accent border = scene selected, green border = image active */
+  #v3-legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+    padding: 4px 12px;
+    font-size: 10px;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+  }
+  #v3-legend .legend-item { display: inline-flex; align-items: center; gap: 5px; }
+  #v3-legend .legend-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
   }
 
   /* Assets tab gallery + undo toast */
@@ -895,6 +957,10 @@
       <span style="font-size:11px;color:var(--accent)" id="sb-count">0 scenes</span>
     </div>
 <div class="v3-scene-strip" id="v3-scene-strip" style="display:none"></div>
+<div id="v3-legend" style="display:none">
+  <span class="legend-item"><span class="legend-swatch" style="background:var(--accent)"></span>Scene selected</span>
+  <span class="legend-item"><span class="legend-swatch" style="background:var(--green)"></span>Image active</span>
+</div>
     <div class="storyboard-grid" id="storyboard-grid">
       <div class="scene-card empty">Select a project to load storyboard</div>
     </div>
@@ -932,6 +998,7 @@
       <div class="tools-tabs">
         <button class="tab-btn active" data-tools-tab="prompts">Prompts</button>
         <button class="tab-btn" data-tools-tab="exports">Exports</button>
+        <button class="tab-btn" data-tools-tab="render">Render</button>
       </div>
     </div>
 
@@ -960,6 +1027,14 @@
       </div>
       <div class="exports-list" id="exports-list">
         <div class="empty">Select a project to list exports</div>
+      </div>
+    </div>
+
+    <!-- Render tab -->
+    <div class="tools-content hidden" id="tools-render" data-pane="render">
+      <div class="prompts-toolbar">
+        <button class="btn primary" id="tools-render-btn" disabled>Render full project</button>
+        <span id="tools-render-msg" style="font-size:12px;color:var(--text-muted)"></span>
       </div>
     </div>
   </section>
@@ -1043,6 +1118,8 @@ function setRenderMsg(text, isError = false) {
   const el = $('render-msg');
   el.textContent = text;
   el.className = isError ? 'error' : '';
+  const toolsMsg = $('tools-render-msg');
+  if (toolsMsg) { toolsMsg.textContent = text; toolsMsg.classList.toggle('error', !!isError); }
 }
 
 // ── SSE ──
@@ -1156,6 +1233,8 @@ function updateRenderGate() {
   if (allApproved && !$('render-msg').textContent) {
     setRenderMsg('All scenes approved ✓');
   }
+  $('render-btn').classList.toggle('hidden', state.v3Mode);
+  $('tools-render-btn').disabled = !allApproved || !state.v3Mode;
 }
 
 // ── Storyboard rendering ──
@@ -1177,6 +1256,7 @@ function renderStoryboard() {
       grid.style.display = '';
       $('v3-workspace-shell').style.display = 'none';
       $('v3-scene-strip').style.display = 'none';
+      $('v3-legend').style.display = 'none';
     }
     return;
   }
@@ -1405,6 +1485,9 @@ function wireEvents() {
 
   // Exports pane
   $('exports-refresh-btn').addEventListener('click', () => loadExports());
+
+  // Render tab (TOOLS pane)
+  $('tools-render-btn').addEventListener('click', triggerRender);
 }
 
 // ── Tools pane: Prompts ──
@@ -1673,6 +1756,7 @@ function renderV3Workspace() {
   $('v3-workspace-shell').style.display = 'flex';
 
   $('v3-scene-strip').style.display = '';
+  $('v3-legend').style.display = '';
   renderV3SceneList();
   renderV3SceneStrip();
 
@@ -2129,7 +2213,7 @@ function renderV3Render() {
       '</div>' +
       '<div class="render-preview">' + videoHtml + '</div>' +
       metaHtml +
-      '<div class="render-footer-note">This is per-scene preview. The full project render (footer) does the final concat.</div>' +
+      '<div class="render-footer-note">This is per-scene preview. For full project render, use the TOOLS → Render tab.</div>' +
     '</div>';
 
   // Wire
