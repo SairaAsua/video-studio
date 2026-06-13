@@ -1,6 +1,0 @@
-file '/home/nicolas/Projects/video-studio/projects/costa-rica/renders/scene-01.mp4'
-file '/home/nicolas/Projects/video-studio/projects/costa-rica/renders/scene-02.mp4'
-file '/home/nicolas/Projects/video-studio/projects/costa-rica/renders/scene-03.mp4'
-file '/home/nicolas/Projects/video-studio/projects/costa-rica/renders/scene-04.mp4'
-file '/home/nicolas/Projects/video-studio/projects/costa-rica/renders/scene-05.mp4'
-file '/home/nicolas/Projects/video-studio/projects/costa-rica/renders/scene-06.mp4'

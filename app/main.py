@@ -21,6 +21,10 @@ Endpoints:
 Image paths in storyboard.json are always relative to the project directory
 (e.g. "scenes/scene-01-v1.png") and served at /projects/{slug}/{path}.
 
+Image generation is request-only — the agent (CompAII) listens on the SSE
+stream and calls xAI Grok Imagine via the image_generate tool. FAL was
+removed 2026-06-13. See MEMORY.md for rationale.
+
 Usage:
     python app/main.py
     uvicorn app.main:app --host 127.0.0.1 --port 8900
@@ -29,10 +33,8 @@ Usage:
 import asyncio
 import json
 import re
-import time
 from pathlib import Path
 
-import requests
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -216,25 +218,27 @@ async def update_scene(slug: str, scene_id: int, body: SceneUpdate):
 
 
 # ---------------------------------------------------------------------------
-# Image generation (FAL via Nous subscription gateway)
+# Image generation (request-only — agent does the work via Grok Imagine)
 # ---------------------------------------------------------------------------
-
-FAL_MODEL = "fal-ai/flux-2/klein/9b"
-FAL_GATEWAY = "https://fal-queue-gateway.nousresearch.com"
-
-def _get_nous_token():
-    """Read Nous access token using Hermes' internal resolver."""
-    try:
-        import sys
-        sys.path.insert(0, str(Path.home() / ".hermes" / "hermes-agent"))
-        from tools.managed_tool_gateway import read_nous_access_token
-        token = read_nous_access_token()
-        return token
-    except Exception:
-        return None
+# The dashboard endpoint below enqueues a "scene-needs-image" SSE event. The
+# agent (CompAII) listens on the SSE stream, calls `image_generate` with
+# xAI Grok Imagine, saves the resulting image, and registers it via
+# `/add-version`. FAL is not used — see MEMORY.md for rationale (2026-06-13).
+#
+# Why request-only (not server-side FAL call):
+# - xAI Grok OAuth tokens live in Hermes' auth pool, accessible only to the
+#   agent runtime. The dashboard process cannot resolve them.
+# - The agent can pick the right model (`grok-imagine-image-quality` for
+#   hero shots, `grok-imagine-image` for fast iteration) per-scene.
+# - Keeps image generation aligned with how the agent does everything else.
 
 def _load_design_style(slug: str) -> tuple[str, int]:
-    """Extract style suffix and seed from DESIGN.md."""
+    """Extract style suffix and seed from DESIGN.md.
+
+    Kept as a helper for the agent (which uses it to build the prompt
+    when it receives the SSE event). The dashboard does not call this
+    directly anymore.
+    """
     design_path = project_dir(slug) / "DESIGN.md"
     if not design_path.exists():
         return "", 42
@@ -253,82 +257,24 @@ def _load_design_style(slug: str) -> tuple[str, int]:
                 pass
     return suffix, seed
 
-def _generate_fal_image(prompt: str, nous_token: str) -> str:
-    """Generate an image via the FAL gateway. Returns the image URL."""
-    headers = {"Authorization": f"Bearer {nous_token}", "Content-Type": "application/json"}
-    payload = {"prompt": prompt, "image_size": "landscape_16_9", "num_images": 1}
-    
-    resp = requests.post(f"{FAL_GATEWAY}/{FAL_MODEL}", headers=headers, json=payload, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-    status_url = data.get("status_url")
-    if not status_url:
-        raise RuntimeError("No status_url in FAL response")
-    
-    # Poll for completion
-    for _ in range(30):
-        time.sleep(1)
-        sr = requests.get(status_url, headers=headers, timeout=10)
-        sr.raise_for_status()
-        sdata = sr.json()
-        if sdata.get("status") == "COMPLETED":
-            rr = requests.get(data["response_url"], headers=headers, timeout=10)
-            rr.raise_for_status()
-            result = rr.json()
-            images = result.get("images", [])
-            if images:
-                return images[0]["url"]
-            raise RuntimeError("No images in completed FAL response")
-        elif sdata["status"] not in ("IN_QUEUE", "IN_PROGRESS"):
-            raise RuntimeError(f"FAL generation failed: {sdata.get('status')}")
-    raise RuntimeError("FAL generation timed out")
-
 
 @app.post("/api/project/{slug}/storyboard/{scene_id}/image")
-async def generate_scene_image(slug: str, scene_id: int):
-    """Generate an image for this scene via FAL and register it immediately."""
+async def request_scene_image(slug: str, scene_id: int):
+    """
+    Enqueue a "generate image for this scene" request. The agent listens
+    on the SSE stream, calls Grok Imagine via the image_generate tool,
+    saves the image to scenes/, and registers it via /add-version.
+    """
     slug = slug.strip()
     project_dir(slug)  # validate
-    
-    # Load scene
+
     sb_path, sb = load_storyboard(slug)
     scene = find_scene(sb, scene_id)
     if scene.get("locked"):
         raise HTTPException(400, f"Scene {scene_id} is locked")
-    
-    # Build prompt
-    style, seed = _load_design_style(slug)
-    prompt = f"{style} {scene.get('visual_direction', '')}".strip()
-    
-    # Generate
-    nous_token = _get_nous_token()
-    if not nous_token:
-        raise HTTPException(500, "Nous token not available")
-    
-    try:
-        image_url = _generate_fal_image(prompt, nous_token)
-    except Exception as e:
-        raise HTTPException(500, f"Image generation failed: {e}")
-    
-    # Download
-    scenes_dir = project_dir(slug) / "scenes"
-    scenes_dir.mkdir(parents=True, exist_ok=True)
-    versions = scene.setdefault("images", [])
-    vnum = len(versions) + 1
-    filename = f"scene-{scene_id:02d}-v{vnum}.png"
-    filepath = scenes_dir / filename
-    
-    img_data = requests.get(image_url, timeout=30)
-    img_data.raise_for_status()
-    filepath.write_bytes(img_data.content)
-    
-    # Register
-    versions.append({"path": f"scenes/{filename}", "seed": seed, "approved": False})
-    scene["current_image"] = len(versions) - 1
-    save_storyboard(sb_path, sb)
-    
-    await sse_notify(slug, "refresh")
-    return {"ok": True, "scene": scene_id, "version": vnum, "path": f"scenes/{filename}"}
+
+    await sse_notify(slug, f"image-requested:{scene_id}")
+    return {"ok": True, "scene": scene_id, "status": "requested", "provider": "xai-grok-imagine"}
 
 
 class VersionAdd(BaseModel):
