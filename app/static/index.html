@@ -503,6 +503,84 @@
   .storyboard-grid.v3-workspace .scene-image {
     height: 320px;
   }
+
+  /* v1.1.1 — scene sidebar + workspace shell */
+  .v3-workspace-shell {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+  .v3-scene-list {
+    width: 220px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    background: var(--surface);
+  }
+  .v3-scene-item {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    transition: background 0.12s;
+  }
+  .v3-scene-item:hover { background: rgba(201,160,58,0.04); }
+  .v3-scene-item.active { background: rgba(201,160,58,0.08); }
+  .v3-scene-item .status-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+  .v3-scene-item .status-icon.approved { color: var(--green); }
+  .v3-scene-item .status-icon.in-progress { color: var(--accent); }
+  .v3-scene-item .status-icon.no-image { color: var(--text-muted); }
+  .v3-scene-item .scene-num {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    min-width: 20px;
+  }
+  .v3-scene-item .scene-preview {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.4;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .v3-workspace-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg);
+  }
+  .v3-workspace-header {
+    padding: 12px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    flex-shrink: 0;
+  }
+  .v3-tab-bar {
+    display: flex;
+    gap: 4px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .v3-tab-body {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+  .v3-tab-body.hidden { display: none; }
 </style>
 </head>
 <body>
@@ -539,6 +617,20 @@
     </div>
     <div class="storyboard-grid" id="storyboard-grid">
       <div class="scene-card empty">Select a project to load storyboard</div>
+    </div>
+    <div class="v3-workspace-shell" id="v3-workspace-shell" style="display:none">
+      <div class="v3-scene-list" id="v3-scene-list"></div>
+      <div class="v3-workspace-panel" id="v3-workspace-panel">
+        <div class="v3-workspace-header" id="v3-workspace-header"></div>
+        <div class="v3-tab-bar" id="v3-tab-bar">
+          <button class="tab-btn active" data-v3-tab="assets">Assets</button>
+          <button class="tab-btn" data-v3-tab="captions">Captions</button>
+          <button class="tab-btn" data-v3-tab="render">Render</button>
+        </div>
+        <div class="v3-tab-body" id="v3-tab-assets">Coming in v1.1.2</div>
+        <div class="v3-tab-body hidden" id="v3-tab-captions">Coming in v1.1.3</div>
+        <div class="v3-tab-body hidden" id="v3-tab-render">Coming in v1.1.4</div>
+      </div>
     </div>
   </section>
 
@@ -781,6 +873,10 @@ function renderStoryboard() {
   if (!scenes.length) {
     grid.innerHTML = '<div class="scene-card empty">No storyboard yet</div>';
     grid.classList.remove('v3-workspace');
+    if (state.v3Mode) {
+      grid.style.display = '';
+      $('v3-workspace-shell').style.display = 'none';
+    }
     return;
   }
 
@@ -791,16 +887,10 @@ function renderStoryboard() {
     return;
   }
 
-  // v3Mode (?v3=1): per-scene workspace, ONE scene at a time, reusing sceneCard()
+  // v3Mode (?v3=1): per-scene workspace shell (sidebar + tabbed panel) replaces
+  // the single-card + Prev/Next layout. See renderV3Workspace() below.
   state.v3Index = Math.max(0, Math.min(state.v3Index, scenes.length - 1));
-  const idx = state.v3Index;
-  const navHtml = `
-<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;padding:4px 0;">
-  <button class="btn" data-action="scene-prev" ${idx === 0 ? 'disabled' : ''}>◀ Prev</button>
-  <button class="btn" data-action="scene-next" ${idx === scenes.length - 1 ? 'disabled' : ''}>Next ▶</button>
-</div>`;
-  grid.innerHTML = navHtml + sceneCard(scenes[idx]);
-  grid.classList.add('v3-workspace');
+  renderV3Workspace();
 }
 
 function sceneCard(s) {
@@ -1208,6 +1298,86 @@ function renderExportItem(exp) {
       </div>
     </div>
   `;
+}
+
+// ── v3 (?v3=1) per-scene workspace: scene sidebar + tabbed panel ──
+// Additive and reached only when state.v3Mode is true; the default grid path
+// never calls into here, so the v3=off behavior is unchanged.
+
+function v3SceneStatus(scene) {
+  // Sidebar status glyph, by precedence: approved (any approved version) →
+  // in-progress (has a version) → no-image. Mirrors sceneCard()'s badge.
+  const versions = scene.images || [];
+  if (versions.some((v) => v.approved)) return { icon: '●', cls: 'approved' };
+  if (versions.length) return { icon: '▸', cls: 'in-progress' };
+  return { icon: '○', cls: 'no-image' };
+}
+
+function renderV3SceneList() {
+  const list = $('v3-scene-list');
+  list.innerHTML = state.scenes.map((s, i) => {
+    const { icon, cls } = v3SceneStatus(s);
+    const text = (s.text || '').trim();
+    const preview = text
+      ? escHtml(text.slice(0, 60)) + (text.length > 60 ? '…' : '')
+      : 'No text';
+    return `
+    <div class="v3-scene-item ${i === state.v3Index ? 'active' : ''}" data-scene-index="${i}">
+      <span class="status-icon ${cls}">${icon}</span>
+      <span class="scene-num">${s.id}</span>
+      <span class="scene-preview">${preview}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderV3Workspace() {
+  wireV3Events();
+
+  // Hand the storyboard area over to the split-panel shell.
+  $('storyboard-grid').style.display = 'none';
+  $('v3-workspace-shell').style.display = 'flex';
+
+  renderV3SceneList();
+
+  const scene = state.scenes[state.v3Index];
+  const text = (scene?.text || '').trim();
+  $('v3-workspace-header').textContent = text
+    ? `Scene ${scene.id} — ${text.slice(0, 80)}${text.length > 80 ? '…' : ''}`
+    : `Scene ${scene.id}`;
+}
+
+function switchV3Tab(name) {
+  document.querySelectorAll('#v3-tab-bar [data-v3-tab]').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.v3Tab === name);
+  });
+  ['assets', 'captions', 'render'].forEach((tab) => {
+    $(`v3-tab-${tab}`).classList.toggle('hidden', tab !== name);
+  });
+}
+
+function wireV3Events() {
+  if (wireV3Events.done) return;   // static containers — wire delegation once
+  wireV3Events.done = true;
+
+  // Scene list: the container is stable while its items are re-rendered, so
+  // delegate clicks from the container rather than rebinding per item.
+  $('v3-scene-list').addEventListener('click', (e) => {
+    const item = e.target.closest('.v3-scene-item');
+    if (!item) return;
+    const i = Number(item.dataset.sceneIndex);
+    if (!Number.isFinite(i)) return;
+    const scene = state.scenes[i];
+    state.v3Index = i;
+    state.selectedScene = scene ? scene.id : null;   // keep prompts-pane regen in sync
+    updateRegenButton();
+    renderStoryboard();
+  });
+
+  // Tab bar.
+  $('v3-tab-bar').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-v3-tab]');
+    if (btn) switchV3Tab(btn.dataset.v3Tab);
+  });
 }
 
 // ── Init ──
