@@ -88,8 +88,10 @@
 
   /* ── Pane: Script Editor ── */
   .pane-script {
-    width: 40%;
-    min-width: 360px;
+    width: 360px;
+    min-width: 240px;
+    max-width: 70%;
+    flex-shrink: 0;
     border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
@@ -194,9 +196,10 @@
 
   /* ── Pane: Tools (Prompts + Exports) ── */
   .pane-tools {
-    width: 32%;
-    min-width: 360px;
-    max-width: 480px;
+    width: 320px;
+    min-width: 320px;
+    max-width: 320px;
+    flex-shrink: 0;
     border-left: 1px solid var(--border);
     display: flex;
     flex-direction: column;
@@ -494,7 +497,7 @@
   footer .render-status { display: flex; align-items: center; gap: 8px; }
   footer .render-status .error { color: var(--red); }
 
-  /* v3 per-scene workspace (only active when ?v3=1; prefixed, minimal addition) */
+  /* v3 per-scene workspace (default as of v2.0; pass ?v1=1 for legacy grid) */
   .storyboard-grid.v3-workspace {
     display: block;
   }
@@ -980,9 +983,11 @@
 
 const API = '';
 
-// URL feature flag read ONCE at init (before any rendering). Default OFF preserves exact grid behavior.
+// URL feature flag read ONCE at init (before any rendering).
+// Default ON: v3 per-scene workspace is the primary dashboard as of v2.0.
+// Pass ?v1=1 to opt back into the legacy v2 grid (kept for rollback).
 const __urlParams = new URLSearchParams(window.location.search);
-const __v3 = __urlParams.get('v3') === '1';
+const __v3 = __urlParams.get('v1') !== '1';
 
 // Single source of client state. The grid is always re-rendered from here,
 // so transient UI (the generating spinner) survives SSE-triggered reloads.
@@ -995,7 +1000,7 @@ const state = {
   prompts: null,           // { image: {...}, video: {...} } loaded from /api/.../prompts
   promptsDirty: false,     // user edited but not saved
   selectedScene: null,     // currently focused scene for re-generate
-  v3Mode: __v3,            // ?v3=1 enables per-scene workspace; default false = grid (no behavior change)
+  v3Mode: __v3,            // v3 per-scene workspace is the default dashboard as of v2.0; pass ?v1=1 for legacy grid
   v3Index: 0,              // current scene index when v3Mode (clamped on render)
   undoTimeout: null,       // setTimeout handle for undo toast
   undoSceneId: null,       // scene id for undo operation
@@ -1183,7 +1188,7 @@ function renderStoryboard() {
     return;
   }
 
-  // v3Mode (?v3=1): per-scene workspace shell (sidebar + tabbed panel) replaces
+  // v3Mode (default as of v2.0): per-scene workspace shell (sidebar + tabbed panel) replaces
   // the single-card + Prev/Next layout. See renderV3Workspace() below.
   state.v3Index = Math.max(0, Math.min(state.v3Index, scenes.length - 1));
   renderV3Workspace();
@@ -1596,7 +1601,7 @@ function renderExportItem(exp) {
   `;
 }
 
-// ── v3 (?v3=1) per-scene workspace: scene sidebar + tabbed panel ──
+// ── v3 (default as of v2.0) per-scene workspace: scene sidebar + tabbed panel ──
 // Additive and reached only when state.v3Mode is true; the default grid path
 // never calls into here, so the v3=off behavior is unchanged.
 
