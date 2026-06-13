@@ -1,0 +1,8 @@
+[BEACON_WORLD]
+Premium contemplative wellness aesthetic. Costa Rica tropical setting or warm-lit interior. Substance-free, non-ceremonial, no new-age imagery, no crystals or sound-bath cliches. Golden hour outdoor light or a single warm indoor light source against deep shadow. Materials: tropical hardwood, bamboo, raw linen, volcanic stone. Color palette: deep near-black backgrounds, warm gold/amber accent (#c9a03a), muted steel blue secondary, soft white highlights. A geometric wooden-and-metal device (the Beacon) may be present as a sculptural anchor — solid, not flashy. No human faces visible; only backs of heads, silhouettes, or hands in stillness. Atmosphere of slow attention and care, not celebration.
+
+[VIDEO_STYLE]
+Cinematic widescreen composition, 16:9, 1280x720 or higher. Contemplative stillness with a sense of held breath. Rule-of-thirds subject placement leaving room for text overlay in upper third. Three depth planes (foreground/midground/background) with atmospheric layering — mist, soft focus, or out-of-focus foreground. Negative space is intentional, not empty. The image should feel like a single frame from a slow-moving documentary about a careful practice, not a stock photo. No on-screen text, no UI elements, no logos, no watermarks.
+
+[SCENE]
+A close detail shot at golden hour, shallow depth of field. In the sharp plane: a flat volcanic stone surface, a folded piece of raw linen, and the back of a relaxed hand resting near the linen. A small ceramic bowl of water catches the side light. Foreground: an out-of-focus leaf in soft green. Background: a soft wash of gold and shadow. Intimate, near, quiet. No devices, no equipment, no tools — just materials of a simple practice.

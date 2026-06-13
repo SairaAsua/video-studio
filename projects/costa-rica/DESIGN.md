@@ -38,11 +38,19 @@ all contexts. The video-style section (§2) layers on top of this.
   - Open-air pavilions, palapas, palenques, floor-to-ceiling openings
   - Interiors that feel like *listening rooms* — minimal, considered,
     not decorated. Dark wood, low warm light, no clutter on surfaces.
-- **The Beacon device** (when present): a sculptural object, often the
-  visual anchor of a shot. Solid, geometric, not flashy. Material reads
-  as wood / metal / fabric — never plastic, never "tech" (no blue glow,
-  no circuits, no screens). Often the only lit object in an otherwise
-  dim space.
+- **The Beacon device** (when present): not yet defined as a finished
+  design. Until an official render exists, the video **must not show
+  any invented device, instrument, speaker, or piece of equipment**.
+  Scenes that would otherwise center a device instead use the
+  **materials and architecture of a careful practice**: wood grain,
+  linen, water in a ceramic bowl, light through palapa thatch. The
+  device appears only as **negative space** — a place where it
+  *could* be, or as a small warm light source that *could* be from
+  it. When an official design is approved, replace these stand-ins
+  with reference images. See the `estilo-wellness` skill (anti-pseudoscience
+  rule) and FROZEN_FACTS §6: not ambient background music, not a
+  generic sound bath, not a medical treatment, not a finished
+  commercial product.
 - **No people, or only backs of heads / silhouettes / hands.** When a
   human is present, they are *in* the experience — head bowed, eyes
   closed, hands resting. Never a smiling "wellness model" pose.

@@ -1,0 +1,165 @@
+{
+  "project": "costa-rica",
+  "scenes": [
+    {
+      "id": 1,
+      "text": "In just a few years, deep inner journeys moved from cultural niche to international premium demand. Mental health went mainstream, the psychedelic renaissance legitimized inner work culturally, and wellness tourism learned to sell it. The supply side did not keep up. The deepest formats remain tied to substances or clinical settings, while what hospitality can actually integrate often stays generic.",
+      "visual_direction": "Wide aerial view of the Costa Rica Pacific coastline at golden hour, just before the sun meets the horizon. The Pacific Ocean in the foreground, a thin band of mist over a dense tropical canopy, distant blue mountains on the right. No people, no boats, no structures visible. The whole frame is one held breath \u2014 the world opening.",
+      "images": [
+        {
+          "path": "scenes/scene-01-v2.jpg",
+          "seed": null,
+          "approved": true
+        }
+      ],
+      "current_image": 0,
+      "locked": true,
+      "_duration_secs": 27.552,
+      "motion_preset": "drift_left",
+      "caption_phrases": [
+        {
+          "text": "The change came first.",
+          "time_in": 1.5,
+          "time_out": 4.5,
+          "role": "display"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "text": "That leaves a structural gap: guided, substance-free experiences commercially legible for premium wellness operators and careful enough to become a category of their own. Harmonic Beacon + Personal Myth Projection (PMP) is built for that gap: a premium, substance-free, sound-symbolic wellness experience supported by a proprietary harmonic sound field and a structured symbolic process.",
+      "visual_direction": "Interior of a small wooden listening room at dusk. Walls of dark tropical hardwood, a low bamboo bench along the far wall, a single dim warm light source in the upper-left corner. The room is otherwise empty. A small ceramic cup of water sits at the far end of the bench, catching a glint of warm light. No people, no devices, no instruments. The space feels prepared for someone to arrive, but no one is there. Negative space in the lower third for the caption.",
+      "images": [
+        {
+          "path": "scenes/scene-02-v2.jpg",
+          "seed": null,
+          "approved": true
+        }
+      ],
+      "current_image": 0,
+      "locked": true,
+      "_duration_secs": 26.4,
+      "motion_preset": "zoom_in",
+      "caption_phrases": [
+        {
+          "text": "The gap is commercial.",
+          "time_in": 1.5,
+          "time_out": 4.5,
+          "role": "display"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "text": "Three founder offers, one wedge. The primary: a Founder Pop-up Signature Journey, 75 to 90 minutes for eight to fifteen participants, USD 95 per person with an USD 850 minimum and a 25 to 35% partner revenue share. A 60-day Boutique Pilot at USD 5,000 founder pricing and a Founding Beacon Facilitator path at USD 1,500 hold the wedge without turning the project into a menu. These are indicative founder ranges, designed to test willingness to pay, operational fit, and repeatability.",
+      "visual_direction": "A close detail shot at golden hour, shallow depth of field. In the sharp plane: a flat volcanic stone surface, a folded piece of raw linen, and the back of a relaxed hand resting near the linen. A small ceramic bowl of water catches the side light. Foreground: an out-of-focus leaf in soft green. Background: a soft wash of gold and shadow. Intimate, near, quiet. No devices, no equipment, no tools \u2014 just materials of a simple practice.",
+      "images": [
+        {
+          "path": "scenes/scene-03-v2.jpg",
+          "seed": null,
+          "approved": true
+        }
+      ],
+      "current_image": 0,
+      "locked": true,
+      "_duration_secs": 38.4,
+      "motion_preset": "push_in_left",
+      "caption_phrases": [
+        {
+          "text": "Three offers. One wedge.",
+          "time_in": 1.5,
+          "time_out": 4.5,
+          "role": "display"
+        },
+        {
+          "text": "Founder pricing, indicative ranges.",
+          "time_in": 5.0,
+          "time_out": 8.5,
+          "role": "body",
+          "font_size": 56
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "text": "Beacon began as a probe for Harmonic Information Theory \u2014 a way to make harmonic structure perceptible in embodied listening. During exploratory sessions, especially at Edge City 2025, an unexpected pattern emerged: people returned, queued to experience the device again, and reported positive subjective effects. Those reports are experiential accounts, not clinical evidence. They explain why we began testing Beacon as a disciplined, non-clinical wellness format.",
+      "visual_direction": "A wider contemplative detail. A wooden desk in afternoon light: the corner of a leather-bound notebook with a pen resting on it, a half-full ceramic cup of water, a pair of reading glasses folded next to the cup. The light comes from a window off-frame left, casting long soft shadows. The whole frame suggests considered work and reflection, not a product shoot. No equipment, no instruments, no devices.",
+      "images": [
+        {
+          "path": "scenes/scene-04-v2.jpg",
+          "seed": null,
+          "approved": true
+        }
+      ],
+      "current_image": 0,
+      "locked": true,
+      "_duration_secs": 31.92,
+      "motion_preset": "push_in_right",
+      "caption_phrases": [
+        {
+          "text": "It started as a probe.",
+          "time_in": 1.5,
+          "time_out": 4.5,
+          "role": "display"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "text": "Each no protects the value of the yes. We won't sell standalone hardware. We won't mass-certify facilitators. We won't put the app or AI up front before validating the in-person experience. We won't make clinical or pseudoscientific claims. We won't mix Beacon with substances. The app is advanced, not launched. AI is a future operator-mediated layer. The lane is deliberately non-clinical wellness \u2014 that discipline is the condition that makes the project legible.",
+      "visual_direction": "Open architecture at the edge of dusk. A large palapa roof of palm thatch, supported by raw wooden posts, opens to a clearing in the tropical forest. Beyond the clearing: the sky in deep teal, the last light of sunset just gone. On the left, a single figure seen from behind, standing still, head slightly bowed, hands at their sides \u2014 in the practice, not watching us. The right half of the frame is open clearing and sky. Quiet, large, restrained. The clearing has no equipment, no staging \u2014 just earth and light.",
+      "images": [
+        {
+          "path": "scenes/scene-05-v2.jpg",
+          "seed": null,
+          "approved": true
+        }
+      ],
+      "current_image": 0,
+      "locked": true,
+      "_duration_secs": 31.224,
+      "motion_preset": "parallax_lr",
+      "caption_phrases": [
+        {
+          "text": "Each no protects the yes.",
+          "time_in": 1.5,
+          "time_out": 5.0,
+          "role": "display"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "time_in": "280.0",
+      "time_out": "330.0",
+      "text": "Costa Rica is an accelerator, not validation. The buyer context exists; the country narrative is aligned. The principal risk in this phase is not the market \u2014 Costa Rica is ready. It is execution discipline: resisting the temptation to open too many fronts before the first paid pilots close. The ask is operational access: qualified introductions to boutique operators and retreat hosts in Costa Rica who can place the first paid pilots, and a local champion who can filter the right conversations. The near-term question is simple: can Beacon + PMP convert a serious body of practice into paid, repeatable, premium wellness formats in Costa Rica?",
+      "visual_direction": "A wide, contemplative view of the Costa Rican landscape at the very end of golden hour, the sun already below the horizon. A tropical valley curves away from the viewer toward distant blue mountains. Mist settles in the lowest folds. A flat stone surface, empty, occupies the lower right corner \u2014 clean, no objects, no light source, no path. The sky is the focal element: deep teal where the sun has just gone, with the first cool blue of evening rising from the east. No people, no devices, no equipment, no artificial light, no hammocks, no tents, no campfires, no figures, no architecture. Just empty land, held in stillness, the last natural light fading. Negative space across the upper third for the caption.",
+      "images": [
+        {
+          "path": "scenes/scene-06-v2.jpg",
+          "seed": null,
+          "approved": true
+        }
+      ],
+      "current_image": 0,
+      "locked": true,
+      "_duration_secs": 44.184,
+      "motion_preset": "zoom_in",
+      "caption_phrases": [
+        {
+          "text": "Costa Rica is the accelerator.",
+          "time_in": 1.5,
+          "time_out": 5.0,
+          "role": "display"
+        },
+        {
+          "text": "The ask is operational access.",
+          "time_in": 6.0,
+          "time_out": 10.0,
+          "role": "body",
+          "font_size": 56
+        }
+      ]
+    }
+  ]
+}

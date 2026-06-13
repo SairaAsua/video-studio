@@ -375,12 +375,13 @@ DEFAULT_PROMPTS = {
             "against deep shadow. Materials: tropical hardwood, bamboo, "
             "raw linen, volcanic stone. Color palette: deep near-black "
             "backgrounds, warm gold/amber accent (#c9a03a), muted steel "
-            "blue secondary, soft white highlights. A geometric wooden-"
-            "and-metal device (the Beacon) may be present as a "
-            "sculptural anchor — solid, not flashy. No human faces "
+            "blue secondary, soft white highlights. No human faces "
             "visible; only backs of heads, silhouettes, or hands in "
             "stillness. Atmosphere of slow attention and care, not "
-            "celebration."
+            "celebration. Do NOT invent or render any specific device, "
+            "instrument, speaker, or piece of equipment — only natural "
+            "materials (wood, linen, stone, water, plants) and "
+            "architectural elements (palapas, benches, pavilions)."
         ),
         "video_style": (
             "Cinematic widescreen composition, 16:9, 1280x720 or higher. "
@@ -392,7 +393,7 @@ DEFAULT_PROMPTS = {
             "not empty. The image should feel like a single frame from "
             "a slow-moving documentary about a careful practice, not a "
             "stock photo. No on-screen text, no UI elements, no logos, "
-            "no watermarks."
+            "no watermarks, no invented technical equipment."
         ),
         "scene_template": (
             "[BEACON_WORLD]\n{beacon_world}\n\n[VIDEO_STYLE]\n{video_style}\n\n"
@@ -407,9 +408,9 @@ DEFAULT_PROMPTS = {
             "single warm light source. Materials: tropical hardwood, "
             "bamboo, raw linen, volcanic stone. Color palette: deep "
             "near-black, warm gold/amber (#c9a03a), muted steel blue, "
-            "soft white. A geometric wooden-and-metal device (the "
-            "Beacon) may be present as a sculptural anchor. No human "
-            "faces visible."
+            "soft white. No human faces visible. Do NOT invent or "
+            "render any specific device, instrument, or piece of "
+            "equipment — only natural materials and architecture."
         ),
         "scene_template": (
             "[BEACON_WORLD]\n{beacon_world}\n\n[SCENE]\n{visual_direction}\n\n"
