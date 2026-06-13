@@ -595,7 +595,7 @@
     line-height: 1.4;
     overflow: hidden;
     display: -webkit-box;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: 4;
     -webkit-box-orient: vertical;
   }
   .v3-workspace-panel {
@@ -1328,7 +1328,8 @@ function sceneCard(s) {
 
 async function generateVersion(id) {
   state.generating.add(id);
-  renderStoryboard();
+  if (state.v3Mode && state.scenes[state.v3Index]?.id === id) renderV3Assets();
+  else renderStoryboard();
   setRenderMsg(`Generating scene ${id}…`);
   try {
     await api(`/api/project/${encodeURIComponent(state.slug)}/storyboard/${id}/image`, { method: 'POST' });
@@ -1338,7 +1339,8 @@ async function generateVersion(id) {
     setRenderMsg(`Scene ${id}: image ready`);
   } catch (err) {
     state.generating.delete(id);
-    renderStoryboard();
+    if (state.v3Mode && state.scenes[state.v3Index]?.id === id) renderV3Assets();
+    else renderStoryboard();
     setRenderMsg(`Scene ${id}: ${err.message}`, true);
   }
 }
@@ -1634,13 +1636,16 @@ async function resetPrompts() {
 }
 
 function updateRegenButton() {
+  // in v3 mode, the active scene drives regen even if `selectedScene` is null
+  const activeId = state.selectedScene != null ? state.selectedScene
+    : (state.v3Mode && state.scenes[state.v3Index] ? state.scenes[state.v3Index].id : null);
   $('prompts-regen-btn').disabled = !(
-    state.slug && state.selectedScene != null && !state.promptsDirty
+    state.slug && activeId != null && !state.promptsDirty
   );
   const btn = $('prompts-regen-btn');
-  if (state.selectedScene != null) {
-    btn.textContent = `Regen scene ${state.selectedScene}`;
-    btn.title = `Re-generate scene ${state.selectedScene}`;
+  if (activeId != null) {
+    btn.textContent = `Regen scene ${activeId}`;
+    btn.title = `Re-generate scene ${activeId}`;
   } else {
     btn.textContent = 'Regen';
     btn.title = 'Re-generate selected scene';
@@ -1648,13 +1653,15 @@ function updateRegenButton() {
 }
 
 async function regenerateSelected() {
-  if (!state.slug || state.selectedScene == null) return;
+  const id = state.selectedScene != null ? state.selectedScene
+    : (state.v3Mode && state.scenes[state.v3Index] ? state.scenes[state.v3Index].id : null);
+  if (!state.slug || id == null) return;
   try {
     await api(
-      `/api/project/${encodeURIComponent(state.slug)}/storyboard/${state.selectedScene}/image`,
+      `/api/project/${encodeURIComponent(state.slug)}/storyboard/${id}/image`,
       { method: 'POST' }
     );
-    setRenderMsg(`Requested regen for scene ${state.selectedScene}. Agent will pick up via SSE.`);
+    setRenderMsg(`Requested regen for scene ${id}. Agent will pick up via SSE.`);
   } catch (err) {
     setRenderMsg(`Regen failed: ${err.message}`, true);
   }

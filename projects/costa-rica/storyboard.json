@@ -33,11 +33,11 @@
         {
           "path": "scenes/scene-02-v2.jpg",
           "seed": null,
-          "approved": true
+          "approved": false
         }
       ],
       "current_image": 0,
-      "locked": true,
+      "locked": false,
       "_duration_secs": 26.4,
       "motion_preset": "zoom_in",
       "caption_phrases": [
