@@ -3,9 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
 <title>Video Studio — Dashboard</title>
 <style>
   :root {
@@ -77,8 +74,10 @@
   header .status-dot {
     width: 6px; height: 6px;
     border-radius: 50%;
-    background: var(--green);
+    background: var(--text-muted);
   }
+  header .status-dot.ok { background: var(--green); }
+  header .status-dot.error { background: var(--red); }
 
   /* ── Main layout ── */
   main {
@@ -157,6 +156,13 @@
   .scene-card:hover { border-color: var(--accent-dim); }
   .scene-card.approved { border-color: var(--green); }
   .scene-card.locked { border-color: var(--accent-dim); }
+  .scene-card.empty {
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
 
   .scene-image {
     width: 100%;
@@ -253,7 +259,7 @@
   .btn.approve:hover { background: var(--green); color: #0b0f14; }
   .btn.danger { background: transparent; color: var(--red); border: 1px solid var(--red); }
   .btn.danger:hover { background: rgba(224,85,106,0.15); }
-  .btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .btn:disabled { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
 
   .badge {
     font-size: 10px;
@@ -293,6 +299,7 @@
     color: var(--text-muted);
   }
   footer .render-status { display: flex; align-items: center; gap: 8px; }
+  footer .render-status .error { color: var(--red); }
 </style>
 </head>
 <body>
@@ -300,14 +307,13 @@
 <header>
   <h1>Video Studio</h1>
   <div class="project-selector">
-    <select id="project-select" onchange="loadProject(this.value)">
+    <select id="project-select">
       <option value="">— select project —</option>
     </select>
     <div class="status">
       <span class="status-dot" id="status-dot"></span>
-      <span id="status-text">ready</span>
+      <span id="status-text">connecting…</span>
     </div>
-    <span id="debug-info" style="font-size:10px;color:var(--accent);margin-left:8px;"></span>
   </div>
 </header>
 
@@ -316,11 +322,10 @@
   <section class="pane-script">
     <div class="pane-header">
       <span>📄 SCRIPT.md</span>
-      <button class="btn" onclick="saveScript()" id="save-script-btn" disabled>Save</button>
+      <button class="btn" id="save-script-btn" disabled>Save</button>
     </div>
     <textarea class="script-editor" id="script-editor"
-      placeholder="Write narration script here...&#10;&#10;## Scene 1 — Title (0:00–0:45)&#10;Narration text...&#10;&#10;## Scene 2 — Title (0:45–1:30)&#10;Narration text..."
-      oninput="onScriptChanged()"></textarea>
+      placeholder="Write narration script here...&#10;&#10;## Scene 1 — Title (0:00–0:45)&#10;Narration text...&#10;&#10;## Scene 2 — Title (0:45–1:30)&#10;Narration text..."></textarea>
   </section>
 
   <!-- Storyboard Pane -->
@@ -330,9 +335,7 @@
       <span style="font-size:11px;color:var(--accent)" id="sb-count">0 scenes</span>
     </div>
     <div class="storyboard-grid" id="storyboard-grid">
-      <div class="scene-card" style="align-items:center;justify-content:center;padding:40px;color:var(--text-muted);font-size:13px;">
-        Select a project to load storyboard
-      </div>
+      <div class="scene-card empty">Select a project to load storyboard</div>
     </div>
   </section>
 </main>
@@ -341,249 +344,375 @@
   <span id="project-path">No project loaded</span>
   <div class="render-status">
     <span id="render-msg"></span>
-    <button class="btn primary" onclick="triggerRender()" id="render-btn" disabled>Render</button>
+    <button class="btn primary" id="render-btn" disabled>Render</button>
   </div>
 </footer>
 
 <script>
-const API = '';
-let currentSlug = '';
-let originalScript = '';
-let saveTimeout;
+'use strict';
 
-// ── SSE ──
-const es = new EventSource(`${API}/api/project/watch`);
-es.onmessage = (e) => {
-  const data = JSON.parse(e.data);
-  if (data.event === 'connected') {
-    document.getElementById('status-dot').style.background = 'var(--green)';
-    document.getElementById('status-text').textContent = 'connected';
-  } else if (data.event === 'ping') {
-    // no-op
-  } else if (data.event === 'gen-requested') {
-    // Agent will handle — keep spinner, do NOT reload
-    document.getElementById('render-msg').textContent = `Generating scene ${data.event.split(':')[1]}...`;
-  } else {
-    // refresh, scene-approved, storyboard-updated, script-updated → reload
-    loadProject(currentSlug || data.slug);
-  }
+const API = '';
+
+// Single source of client state. The grid is always re-rendered from here,
+// so transient UI (the generating spinner) survives SSE-triggered reloads.
+const state = {
+  slug: '',
+  scenes: [],
+  generating: new Set(),   // scene ids with a pending generation
+  originalScript: '',
+  loadToken: 0,            // guards against out-of-order loadProject responses
 };
 
-// ── Project list ──
-async function listProjects() {
-  const resp = await fetch(`${API}/api/projects`);
-  const projects = await resp.json();
-  const sel = document.getElementById('project-select');
-  projects.forEach(p => {
-    const opt = document.createElement('option');
-    opt.value = p; opt.textContent = p;
-    sel.appendChild(opt);
-  });
+const $ = (id) => document.getElementById(id);
+
+// ── Helpers ──
+
+function escHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
 }
 
-// ── Load ──
+function imageUrl(path) {
+  // Storyboard paths are project-relative; tolerate older absolute variants.
+  const clean = String(path)
+    .replace(/^\/+/, '')
+    .replace(new RegExp(`^projects/${state.slug}/`), '');
+  return `/projects/${encodeURIComponent(state.slug)}/${clean}`;
+}
+
+async function api(path, options) {
+  const resp = await fetch(API + path, options);
+  let data = null;
+  try { data = await resp.json(); } catch { /* non-JSON error body */ }
+  if (!resp.ok) {
+    throw new Error(data?.detail || `${resp.status} ${resp.statusText}`);
+  }
+  return data;
+}
+
+function setStatus(text, kind = 'ok') {
+  $('status-dot').className = `status-dot ${kind}`;
+  $('status-text').textContent = text;
+}
+
+function setRenderMsg(text, isError = false) {
+  const el = $('render-msg');
+  el.textContent = text;
+  el.className = isError ? 'error' : '';
+}
+
+// ── SSE ──
+
+function connectSSE() {
+  const es = new EventSource(`${API}/api/project/watch`);
+
+  es.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    // Events may carry an argument after a colon, e.g. "gen-requested:3".
+    const [kind, arg] = String(data.event || '').split(':');
+    const sceneId = Number(arg);
+
+    switch (kind) {
+      case 'connected':
+        setStatus('connected');
+        break;
+      case 'ping':
+        break;
+      case 'gen-requested':
+        // Generation started (possibly by another client or the agent):
+        // show the spinner, don't reload — nothing on disk changed yet.
+        if (Number.isFinite(sceneId)) {
+          state.generating.add(sceneId);
+          renderStoryboard();
+          setRenderMsg(`Generating scene ${sceneId}…`);
+        }
+        break;
+      case 'image-added':
+        if (Number.isFinite(sceneId)) {
+          state.generating.delete(sceneId);
+          setRenderMsg(`Scene ${sceneId}: image ready`);
+        }
+        reloadCurrent(data.slug);
+        break;
+      default:
+        // refresh, scene-approved, storyboard-updated, script-updated, render-queued
+        reloadCurrent(data.slug);
+    }
+  };
+
+  es.onerror = () => {
+    setStatus('disconnected — retrying…', 'error');
+    es.close();
+    setTimeout(connectSSE, 2000);
+  };
+}
+
+function reloadCurrent(slug) {
+  const target = state.slug || slug;
+  if (target) loadProject(target);
+}
+
+// ── Project loading ──
+
+async function listProjects() {
+  const projects = await api('/api/projects');
+  const sel = $('project-select');
+  for (const p of projects) {
+    const opt = document.createElement('option');
+    opt.value = p;
+    opt.textContent = p;
+    sel.appendChild(opt);
+  }
+  return projects;
+}
+
 async function loadProject(slug) {
   if (!slug) return;
-  currentSlug = slug;
-  const debug = document.getElementById('debug-info');
-  document.getElementById('project-path').textContent = `projects/${slug}/`;
+  state.slug = slug;
+  $('project-select').value = slug;
+  $('project-path').textContent = `projects/${slug}/`;
 
+  const token = ++state.loadToken;
   try {
-    const resp = await fetch(`${API}/api/project/${slug}`);
-    const data = await resp.json();
-    debug.textContent = `v2 · ${data.storyboard?.scenes?.length||0} scenes`;
+    const data = await api(`/api/project/${encodeURIComponent(slug)}`);
+    if (token !== state.loadToken) return; // superseded by a newer load
 
-    // Script — show whatever artifact is available
-    const editor = document.getElementById('script-editor');
-    const scriptContent = data.script || data.SPINE || data.brief || '';
-    editor.value = scriptContent;
-    originalScript = scriptContent;
-    document.getElementById('save-script-btn').disabled = true;
+    state.scenes = data.storyboard?.scenes || [];
 
-    // Storyboard
-    renderStoryboard(data.storyboard, data.scene_images || [], slug);
+    // Script — show best available artifact, but never clobber unsaved edits.
+    const editor = $('script-editor');
+    const incoming = data.script ?? data.SPINE ?? data.brief ?? '';
+    const dirty = editor.value !== state.originalScript;
+    if (!dirty) {
+      editor.value = incoming;
+      state.originalScript = incoming;
+      $('save-script-btn').disabled = true;
+    }
 
-    // Render button
-    const allApproved = (data.storyboard?.scenes || []).every(s => (s.images||[]).some(v => v.approved));
-    document.getElementById('render-btn').disabled = !allApproved;
-    document.getElementById('render-msg').textContent = allApproved ? 'All scenes approved ✓' : '';
-  } catch(e) {
-    debug.textContent = 'ERROR: ' + e.message;
-    console.error(e);
+    renderStoryboard();
+    updateRenderGate();
+    setStatus('connected');
+  } catch (err) {
+    setStatus(err.message, 'error');
+    console.error('loadProject failed:', err);
   }
 }
 
-// ── Storyboard render ──
-function renderStoryboard(sb, images, slug) {
-  const grid = document.getElementById('storyboard-grid');
-  const scenes = sb?.scenes || [];
-  document.getElementById('sb-count').textContent = `${scenes.length} scenes`;
+function updateRenderGate() {
+  const allApproved = state.scenes.length > 0 &&
+    state.scenes.every((s) => (s.images || []).some((v) => v.approved));
+  $('render-btn').disabled = !allApproved;
+  if (allApproved && !$('render-msg').textContent) {
+    setRenderMsg('All scenes approved ✓');
+  }
+}
+
+// ── Storyboard rendering ──
+
+function renderStoryboard() {
+  const grid = $('storyboard-grid');
+  const scenes = state.scenes;
+  $('sb-count').textContent = `${scenes.length} scenes`;
 
   if (!scenes.length) {
-    grid.innerHTML = '<div class="scene-card" style="align-items:center;justify-content:center;padding:40px;color:var(--text-muted);font-size:13px;">No storyboard yet</div>';
+    grid.innerHTML = '<div class="scene-card empty">No storyboard yet</div>';
     return;
   }
+  grid.innerHTML = scenes.map(sceneCard).join('');
+}
 
-  grid.innerHTML = scenes.map(s => {
-    const versions = s.images || [];
-    const currentIdx = s.current_image || 0;
-    const currentImg = versions[currentIdx];
-    const totalV = versions.length;
-    const hasApproved = versions.some(v => v.approved);
+function sceneCard(s) {
+  const versions = s.images || [];
+  const total = versions.length;
+  const idx = total ? Math.min(s.current_image || 0, total - 1) : 0;
+  const current = versions[idx];
+  const generating = state.generating.has(s.id);
+  const hasApproved = versions.some((v) => v.approved);
 
-    const imgHtml = currentImg
-      ? `<img src="/projects/${slug}/${currentImg.path}" alt="Scene ${s.id} v${currentIdx+1}">`
-      : (s._generating
-        ? `<div class="placeholder generating">Generating...<br><small>scene ${s.id}</small></div>`
-        : `<div class="placeholder">Scene ${s.id}<br><small>No image generated</small></div>`);
+  const imgHtml = generating
+    ? `<div class="placeholder generating"><span class="spinner"></span> Generating…<br><small>scene ${s.id}</small></div>`
+    : current
+      ? `<img src="${escHtml(imageUrl(current.path))}" alt="Scene ${s.id} v${idx + 1}">`
+      : `<div class="placeholder">Scene ${s.id}<br><small>No image generated</small></div>`;
 
-    const navArrows = totalV > 1 ? `
-      <button class="img-nav prev" onclick="navigateImage(${s.id}, -1)" title="Previous version">‹</button>
-      <button class="img-nav next" onclick="navigateImage(${s.id}, 1)" title="Next version">›</button>
-    ` : '';
+  const navArrows = total > 1 ? `
+      <button class="img-nav prev" data-action="prev" title="Previous version">‹</button>
+      <button class="img-nav next" data-action="next" title="Next version">›</button>` : '';
 
-    const versionBadge = totalV > 0
-      ? `<span class="badge version">v${currentIdx+1}/${totalV}</span>`
-      : '';
+  const versionBadge = total > 0
+    ? `<span class="badge version">v${idx + 1}/${total}</span>`
+    : '';
 
-    const statusBadge = hasApproved ? 'approved' : (s.locked ? 'locked' : 'draft');
-    const statusText = hasApproved ? '✓ Approved' : (s.locked ? '🔒 Locked' : 'Draft');
+  const status = hasApproved ? 'approved' : (s.locked ? 'locked' : 'draft');
+  const statusText = hasApproved ? '✓ Approved' : (s.locked ? '🔒 Locked' : 'Draft');
 
-    return `
-    <div class="scene-card ${statusBadge}">
+  return `
+    <div class="scene-card ${status}" data-scene-id="${s.id}">
       <div class="scene-image">
         ${imgHtml}
         ${navArrows}
         ${versionBadge}
       </div>
       <div class="scene-info">
-        <div class="scene-time">Scene ${s.id} · ${s.time_in}–${s.time_out}</div>
+        <div class="scene-time">Scene ${s.id} · ${escHtml(s.time_in || '')}–${escHtml(s.time_out || '')}</div>
         <div class="scene-text">
-          <textarea onchange="updateSceneText(${s.id}, this.value)"
-            placeholder="Scene narration...">${escHtml(s.text || '')}</textarea>
+          <textarea data-field="text" placeholder="Scene narration...">${escHtml(s.text || '')}</textarea>
         </div>
         <div class="scene-actions">
-          <span class="badge ${statusBadge}">${statusText}</span>
-          <button class="btn" onclick="generateVersion(${s.id})" ${s.locked ? 'disabled' : ''}>🖼 Gen</button>
-          <button class="btn" onclick="lockScene(${s.id}, ${!s.locked})">${s.locked ? 'Unlock' : 'Lock'}</button>
-          <button class="btn approve" onclick="approveCurrent(${s.id})" ${hasApproved ? 'disabled' : ''}>✓</button>
+          <span class="badge ${status}">${statusText}</span>
+          <button class="btn" data-action="generate" ${s.locked || generating ? 'disabled' : ''}>🖼 Gen</button>
+          <button class="btn" data-action="lock">${s.locked ? 'Unlock' : 'Lock'}</button>
+          <button class="btn approve" data-action="approve" ${hasApproved || !current ? 'disabled' : ''}>✓</button>
         </div>
       </div>
     </div>`;
-  }).join('');
 }
 
-function navigateImage(sceneId, delta) {
-  const sbPath = `${API}/api/project/${currentSlug}/storyboard/${sceneId}/navigate`;
-  fetch(sbPath, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({delta})})
-    .then(() => loadProject(currentSlug));
-}
+// ── Scene actions ──
 
 async function generateVersion(id) {
-  const grid = document.getElementById('storyboard-grid');
-  const cards = grid.querySelectorAll('.scene-card');
-  // Find the right card — nth-child is 1-based, but we need to match by data or order
-  const card = Array.from(cards).find(c => {
-    const timeEl = c.querySelector('.scene-time');
-    return timeEl && timeEl.textContent.startsWith(`Scene ${id}`);
-  });
-  if (card) {
-    const imgDiv = card.querySelector('.scene-image');
-    imgDiv.innerHTML = `<div class="placeholder generating"><span class="spinner"></span> Generating...<br><small>scene ${id}</small></div>`;
+  state.generating.add(id);
+  renderStoryboard();
+  setRenderMsg(`Generating scene ${id}…`);
+  try {
+    await api(`/api/project/${encodeURIComponent(state.slug)}/storyboard/${id}/image`, { method: 'POST' });
+    // Image is now on disk — reload to show it
+    state.generating.delete(id);
+    await loadProject(state.slug);
+    setRenderMsg(`Scene ${id}: image ready`);
+  } catch (err) {
+    state.generating.delete(id);
+    renderStoryboard();
+    setRenderMsg(`Scene ${id}: ${err.message}`, true);
   }
-  document.getElementById('render-msg').textContent = `Requesting generation for scene ${id}...`;
-  const resp = await fetch(`${API}/api/project/${currentSlug}/storyboard/${id}/image`, {method: 'POST'});
-  const data = await resp.json();
-  if (!resp.ok) {
-    document.getElementById('render-msg').textContent = data.detail || 'Generation request failed';
-  }
-  // Do NOT reload — SSE will trigger refresh when agent saves the image
 }
 
-async function approveCurrent(id) {
-  await fetch(`${API}/api/project/${currentSlug}/storyboard/${id}/approve`, {method: 'POST'});
-  loadProject(currentSlug);
+async function navigateImage(id, delta) {
+  try {
+    await api(`/api/project/${encodeURIComponent(state.slug)}/storyboard/${id}/navigate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ delta }),
+    });
+    await loadProject(state.slug);
+  } catch (err) {
+    setRenderMsg(`Scene ${id}: ${err.message}`, true);
+  }
 }
 
 async function lockScene(id, locked) {
-  await fetch(`${API}/api/project/${currentSlug}/storyboard/${id}`, {
-    method: 'PUT',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({locked}),
-  });
-  loadProject(currentSlug);
+  try {
+    await api(`/api/project/${encodeURIComponent(state.slug)}/storyboard/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ locked }),
+    });
+    await loadProject(state.slug);
+  } catch (err) {
+    setRenderMsg(`Scene ${id}: ${err.message}`, true);
+  }
 }
 
-// ── Actions ──
-function escHtml(s) {
-  const div = document.createElement('div');
-  div.textContent = s;
-  return div.innerHTML;
-}
-
-function onScriptChanged() {
-  const editor = document.getElementById('script-editor');
-  document.getElementById('save-script-btn').disabled = editor.value === originalScript;
-}
-
-async function saveScript() {
-  const editor = document.getElementById('script-editor');
-  const resp = await fetch(`${API}/api/project/${currentSlug}/script`, {
-    method: 'PUT',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({content: editor.value}),
-  });
-  if (resp.ok) {
-    originalScript = editor.value;
-    document.getElementById('save-script-btn').disabled = true;
+async function approveCurrent(id) {
+  try {
+    await api(`/api/project/${encodeURIComponent(state.slug)}/storyboard/${id}/approve`, { method: 'POST' });
+    await loadProject(state.slug);
+  } catch (err) {
+    setRenderMsg(`Scene ${id}: ${err.message}`, true);
   }
 }
 
 async function updateSceneText(id, text) {
-  await fetch(`${API}/api/project/${currentSlug}/storyboard/${id}`, {
-    method: 'PUT',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({text}),
-  });
-}
-
-async function lockScene(id, locked) {
-  await fetch(`${API}/api/project/${currentSlug}/storyboard/${id}`, {
-    method: 'PUT',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({locked}),
-  });
-  loadProject(currentSlug);
-}
-
-async function approveScene(id) {
-  await fetch(`${API}/api/project/${currentSlug}/storyboard/${id}`, {
-    method: 'PUT',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({approved: true}),
-  });
-  loadProject(currentSlug);
-}
-
-async function regenerateImage(id) {
-  document.getElementById('render-msg').textContent = `Generating scene ${id}...`;
-  await fetch(`${API}/api/project/${currentSlug}/storyboard/${id}/image`, {method: 'POST'});
-  loadProject(currentSlug);
-}
-
-async function triggerRender() {
-  document.getElementById('render-msg').textContent = 'Rendering...';
-  const resp = await fetch(`${API}/api/project/${currentSlug}/render`, {method: 'POST'});
-  const data = await resp.json();
-  if (resp.ok) {
-    document.getElementById('render-msg').textContent = data.message;
-  } else {
-    document.getElementById('render-msg').textContent = data.detail || 'Render failed';
+  try {
+    await api(`/api/project/${encodeURIComponent(state.slug)}/storyboard/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+  } catch (err) {
+    setRenderMsg(`Scene ${id}: ${err.message}`, true);
   }
 }
 
+// ── Script + render ──
+
+async function saveScript() {
+  const editor = $('script-editor');
+  try {
+    await api(`/api/project/${encodeURIComponent(state.slug)}/script`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: editor.value }),
+    });
+    state.originalScript = editor.value;
+    $('save-script-btn').disabled = true;
+  } catch (err) {
+    setRenderMsg(`Save failed: ${err.message}`, true);
+  }
+}
+
+async function triggerRender() {
+  setRenderMsg('Rendering…');
+  $('render-btn').disabled = true;
+  try {
+    const data = await api(`/api/project/${encodeURIComponent(state.slug)}/render`, { method: 'POST' });
+    setRenderMsg(data.message || 'Render queued');
+  } catch (err) {
+    setRenderMsg(err.message, true);
+    $('render-btn').disabled = false;
+  }
+}
+
+// ── Event wiring (delegation — cards are re-rendered as plain HTML) ──
+
+function wireEvents() {
+  $('project-select').addEventListener('change', (e) => loadProject(e.target.value));
+  $('save-script-btn').addEventListener('click', saveScript);
+  $('render-btn').addEventListener('click', triggerRender);
+  $('script-editor').addEventListener('input', (e) => {
+    $('save-script-btn').disabled = e.target.value === state.originalScript;
+  });
+
+  const grid = $('storyboard-grid');
+
+  grid.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const id = Number(btn.closest('[data-scene-id]')?.dataset.sceneId);
+    if (!Number.isFinite(id)) return;
+    const scene = state.scenes.find((s) => s.id === id);
+
+    switch (btn.dataset.action) {
+      case 'generate': generateVersion(id); break;
+      case 'lock': lockScene(id, !scene?.locked); break;
+      case 'approve': approveCurrent(id); break;
+      case 'prev': navigateImage(id, -1); break;
+      case 'next': navigateImage(id, 1); break;
+    }
+  });
+
+  grid.addEventListener('change', (e) => {
+    if (!e.target.matches('textarea[data-field="text"]')) return;
+    const id = Number(e.target.closest('[data-scene-id]')?.dataset.sceneId);
+    if (Number.isFinite(id)) updateSceneText(id, e.target.value);
+  });
+}
+
 // ── Init ──
-listProjects();
+
+async function init() {
+  wireEvents();
+  connectSSE();
+  try {
+    const projects = await listProjects();
+    if (projects.length === 1) loadProject(projects[0]);
+  } catch (err) {
+    setStatus(err.message, 'error');
+  }
+}
+
+init();
 </script>
 </body>
 </html>

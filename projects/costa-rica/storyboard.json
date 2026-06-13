@@ -3,9 +3,9 @@
   "scenes": [
     {
       "id": 1,
-      "time_in": "0:00",
-      "time_out": "1:00",
-      "text": "Costa Rica is the entry point. Not just any country \u2014 the country that already sells wellness to the world. Wellness tourism estimated at 1.2 billion dollars. Blue Zone. Wellness Pura Vida. The ecosystem is culturally ready for this.",
+      "time_in": "0.0",
+      "time_out": "34.6",
+      "text": "Wellness travel is no longer a spa add-on. It's a $1.2 billion market growing at double digits \u2014 and the most sought-after experiences are substance-free, structured, and premium. Retreat centers are full. Boutique operators are scrambling to differentiate. But what's missing is a signature inner journey: proprietary sound technology, symbolic structure, and a careful protocol \u2014 no substances, no pseudoscience, no generic sound bath. That's the gap. That's why Costa Rica. That's why now.",
       "visual_direction": "Aerial view of Costa Rica Pacific coastline at golden hour, Nosara peninsula, tropical forest meeting the ocean, soft mist, warm amber light, no people, cinematic landscape photography, 8K photorealistic",
       "images": [
         {
@@ -16,67 +16,107 @@
         {
           "path": "scenes/scene-01-v2.png",
           "seed": 42,
-          "approved": false
+          "approved": true
         }
       ],
-      "current_image": 0,
-      "locked": false
+      "current_image": 1,
+      "locked": true,
+      "_duration_secs": 34.584
     },
     {
       "id": 2,
-      "time_in": "1:00",
-      "time_out": "1:50",
-      "text": "Costa Rica already has everything: yoga, breathwork, sound bowls, plant medicine. But what doesn't exist is a premium, substance-free inner journey with proprietary sound technology and a careful protocol. That's the gap.",
+      "time_in": "34.6",
+      "time_out": "62.5",
+      "text": "Costa Rica already has everything: yoga, breathwork, sound bowls, Reiki, plant medicine, cold plunge, ecstatic dance. But boutique operators \u2014 hotels, retreat centers, retreat hosts \u2014 need differentiation. What doesn't exist is a premium, substance-free inner journey experience with proprietary sound technology, symbolic structure, and a careful protocol. That's the gap.",
       "visual_direction": "A minimalist sound installation space at dusk, the Harmonic Beacon device glowing softly in the center of an empty bamboo pavilion, warm amber light contrasting with deep blue twilight outside, premium spa aesthetic, no people, photorealistic",
       "images": [
         {
           "path": "scenes/scene-02-v1.png",
           "seed": 42,
+          "approved": true
+        }
+      ],
+      "current_image": 0,
+      "locked": true,
+      "_duration_secs": 27.912
+    },
+    {
+      "id": 3,
+      "time_in": "62.5",
+      "time_out": "125.8",
+      "text": "We don't need 15 product lines. We need three sellable offers: 1. **Pop-up Beacon+PMP** \u2014 A 75\u201390 minute signature experience inside existing retreats. The partner provides space and audience; we provide Beacon, facilitation, protocol, and materials. Public price: USD 85\u2013150 per person. Minimum for us: USD 750\u20131,200 per session. 2. **Anchor B2B pilot** \u2014 60 days with an eco-resort or retreat center. We turn Beacon into a pilot amenity: measure acceptance, willingness to pay, qualitative reviews. Founder price: USD 5,000. 3. **Founding Facilitator cohort** \u2014 A small, curated first group of ambassador facilitators with license, support, and limited commercial use rights. Founder price: USD 1,500.",
+      "visual_direction": "Three elegant dark cards floating in space, each with a minimalist icon (circle of people, handshake, single figure with glow), premium gold-on-black typography, clean layout, no text rendered by AI",
+      "images": [
+        {
+          "path": "scenes/scene-03-v1.png",
+          "seed": 42,
+          "approved": true
+        }
+      ],
+      "current_image": 0,
+      "locked": true,
+      "_duration_secs": 63.288
+    },
+    {
+      "id": 4,
+      "time_in": "125.8",
+      "time_out": "162.6",
+      "text": "We did the work. We analyzed the Costa Rican wellness market in depth. We interviewed the ecosystem. We modeled buyer personas, pricing, channels, risks. We designed protocols for care, consent, pause criteria, and referral pathways. We separated Beacon wellness from PMP psychotherapeutic work with legal clarity. We documented what language to use and what promises not to make. All of this is written and reviewed. The result is simple but not simplistic: every price, every format, every boundary has a foundation.",
+      "visual_direction": "An elegant workspace with documents layered on a dark wood desk, a laptop open, the Beacon device resting powered off beside it, warm desk lamp lighting, intellectual atmosphere, no people, photorealistic",
+      "images": [
+        {
+          "path": "scenes/scene-04-v1.png",
+          "seed": 42,
+          "approved": true
+        }
+      ],
+      "current_image": 0,
+      "locked": true,
+      "_duration_secs": 36.84
+    },
+    {
+      "id": 5,
+      "time_in": "162.6",
+      "time_out": "187.7",
+      "text": "We won't sell standalone hardware. We won't mass-certify facilitators. We won't put the app or AI up front before validating the in-person experience. We won't make clinical or pseudoscientific claims. We won't give away the experience to be liked. We won't mix Beacon with substances. We won't treat Costa Rica as extractive decor. Each \"no\" protects the value of the \"yes.\"",
+      "visual_direction": "A minimalist shield or crest design, geometric and precise, matte black surface with gold edge highlights, one glowing amber point at the center, premium brand identity aesthetic, no text",
+      "images": [
+        {
+          "path": "scenes/scene-05-v1.png",
+          "seed": 42,
+          "approved": true
+        },
+        {
+          "path": "scenes/scene-05-v2.png",
+          "seed": 42,
           "approved": false
         }
       ],
       "current_image": 0,
-      "locked": false
-    },
-    {
-      "id": 3,
-      "time_in": "1:50",
-      "time_out": "3:10",
-      "text": "Three formats. Simple. Sellable today. Pop-up experience inside existing retreats. Anchor B2B pilot with an eco-resort. Founding facilitator cohort. Nothing to build that isn't ready.",
-      "visual_direction": "Three elegant dark cards floating in space, each with a minimalist icon (circle of people, handshake, single figure with glow), premium gold-on-black typography, clean layout, no text rendered by AI",
-      "images": [],
-      "current_image": 0,
-      "locked": false
-    },
-    {
-      "id": 4,
-      "time_in": "3:10",
-      "time_out": "4:10",
-      "text": "We did the work. 44 pages of operational analysis, 69 directives, buyer personas, protocols, and governance behind every decision. The result is simple but not simplistic.",
-      "visual_direction": "An elegant workspace with documents layered on a dark wood desk, a laptop open, the Beacon device resting powered off beside it, warm desk lamp lighting, intellectual atmosphere, no people, photorealistic",
-      "images": [],
-      "current_image": 0,
-      "locked": false
-    },
-    {
-      "id": 5,
-      "time_in": "4:10",
-      "time_out": "4:55",
-      "text": "What we choose not to do is as important as what we do. No standalone hardware. No mass certification. No clinical claims. No substances. No extractive decor. Each no protects the yes.",
-      "visual_direction": "A minimalist shield or crest design, geometric and precise, matte black surface with gold edge highlights, one glowing amber point at the center, premium brand identity aesthetic, no text",
-      "images": [],
-      "current_image": 0,
-      "locked": false
+      "locked": true,
+      "_duration_secs": 25.056
     },
     {
       "id": 6,
-      "time_in": "4:55",
-      "time_out": "5:45",
-      "text": "The in-person Beacon sells trust. Training multiplies distribution. Licensing captures recurrence. The app retains. AI scales later. But the first step is in-person, paid, and carefully held. That's what we're doing in Costa Rica right now.",
+      "time_in": "187.7",
+      "time_out": "247.7",
+      "text": "We know the right order. We're not going to invert it. First: premium paid experiences with boutique operators. Then: facilitator network. Then: app as continuity. Then: AI as horizon. We're looking for investors who understand this isn't an app-disruption play or a mass-hardware play \u2014 it's a layered rollout where each stage funds the next, and where the core asset isn't the technology but the trust built through in-person experience. **A note on risks:** The principal risk in this phase is not the market \u2014 Costa Rica is ready. It's execution discipline: resisting the temptation to open too many fronts before the first paid pilots close. Our mitigation is the sequenced roadmap you just heard. No app before paid validation. No mass certification before protocol is proven. No AI layer before human facilitation is stable. If you're interested in being part of the founding partner circle, let's talk.",
       "visual_direction": "The Beacon device lit and glowing warmly in a completely dark premium space, warm amber light radiating outward, peaceful and inviting atmosphere, the light suggesting a doorway or invitation, photorealistic, cinematic",
-      "images": [],
-      "current_image": 0,
-      "locked": false
+      "images": [
+        {
+          "path": "scenes/scene-06-v1.png",
+          "seed": 42,
+          "approved": false
+        },
+        {
+          "path": "scenes/scene-06-v2.png",
+          "seed": 42,
+          "approved": true
+        }
+      ],
+      "current_image": 1,
+      "locked": true,
+      "_duration_secs": 59.976
     }
   ]
 }

@@ -45,7 +45,16 @@ def render_scene(scene: dict, paths: dict, quality: str = "draft",
                  width: int = 1920, height: int = 1080) -> Path:
     """Render a single scene: still + Ken Burns + audio → mp4."""
     scene_id = scene["id"]
-    image_path = paths["scenes"] / scene.get("image_path", f"scene-{scene_id:02d}.png")
+    
+    # Get image from the versioned images array
+    versions = scene.get("images", [])
+    approved = next((v for v in versions if v.get("approved")), None) if versions else None
+    current = versions[scene.get("current_image", 0)] if versions and scene.get("current_image", 0) < len(versions) else None
+    image_info = approved or current
+    if not image_info:
+        raise RuntimeError(f"Scene {scene_id}: no approved or current image")
+    image_path = paths["scenes"].parent / image_info["path"]
+    
     audio_path = paths["audio"] / f"scene-{scene_id:02d}.mp3"
     output_path = paths["renders"] / f"scene-{scene_id:02d}.mp4"
     paths["renders"].mkdir(parents=True, exist_ok=True)
@@ -137,10 +146,10 @@ def main():
         print(f"Rendered: {output}")
 
     else:
-        # Render all approved scenes
-        unapproved = [s for s in scenes if not s.get("approved")]
+        # Render all scenes that have an approved image version
+        unapproved = [s for s in scenes if not any(v.get("approved") for v in s.get("images", []))]
         if unapproved:
-            print(f"ERROR: {len(unapproved)} scenes not approved: {[s['id'] for s in unapproved]}")
+            print(f"ERROR: {len(unapproved)} scenes without approved image: {[s['id'] for s in unapproved]}")
             sys.exit(1)
 
         rendered = []
