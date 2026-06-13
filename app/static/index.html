@@ -824,6 +824,37 @@
   body.resizing-script-pane {
     user-select: none;
   }
+
+  /* ── Script pane minimize / icon button ── */
+  .btn-icon {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    line-height: 1;
+    text-transform: none;
+  }
+
+  .pane-script.pane-minimized {
+    width: 32px !important;
+    flex: none !important;
+    min-width: 32px !important;
+  }
+  .pane-script.pane-minimized .pane-resize-handle {
+    display: none;
+  }
+  .pane-script.pane-minimized .script-editor {
+    display: none;
+  }
+  .pane-script.pane-minimized #save-script-btn {
+    display: none;
+  }
+  .pane-script {
+    transition: width 0.25s ease, min-width 0.25s ease;
+  }
 </style>
 </head>
 <body>
@@ -847,6 +878,7 @@
     <div class="pane-header">
       <span>📄 SCRIPT.md</span>
       <button class="btn" id="save-script-btn" disabled>Save</button>
+      <button class="btn btn-icon" id="pane-minimize-btn" title="Minimize pane">−</button>
     </div>
     <textarea class="script-editor" id="script-editor"
       placeholder="Write narration script here...&#10;&#10;## Scene 1 — Title (0:00–0:45)&#10;Narration text...&#10;&#10;## Scene 2 — Title (0:45–1:30)&#10;Narration text..."></textarea>
@@ -2203,11 +2235,75 @@ function initPaneResize() {
   });
 }
 
+// ── Script pane minimize toggle (header button) ──
+function initPaneMinimize() {
+  const pane = document.querySelector('.pane-script');
+  const btn = document.getElementById('pane-minimize-btn');
+  const handle = document.getElementById('pane-resize-handle');
+  if (!pane || !btn) return;
+
+  // Load state: if minimized on load, apply class BEFORE transition
+  const prevTransition = pane.style.transition;
+  pane.style.transition = 'none';
+
+  const isMinimized = localStorage.getItem('script-pane-minimized') === 'true';
+  if (isMinimized) {
+    pane.classList.add('pane-minimized');
+    btn.textContent = '□';
+    btn.title = 'Restore pane';
+  } else {
+    pane.classList.remove('pane-minimized');
+    btn.textContent = '−';
+    btn.title = 'Minimize pane';
+  }
+
+  // Reflow to lock the no-transition state, then restore transition for future toggles
+  void pane.offsetWidth;
+  pane.style.transition = prevTransition || 'width 0.25s ease, min-width 0.25s ease';
+
+  // Toggle behavior
+  btn.addEventListener('click', () => {
+    const nowMinimized = pane.classList.toggle('pane-minimized');
+    const textarea = document.getElementById('script-editor');
+
+    if (nowMinimized) {
+      localStorage.setItem('script-pane-minimized', 'true');
+      if (textarea) textarea.style.display = 'none';
+      pane.style.overflow = 'hidden';
+      btn.textContent = '□';
+      btn.title = 'Restore pane';
+    } else {
+      localStorage.setItem('script-pane-minimized', 'false');
+      if (textarea) textarea.style.display = '';
+      pane.style.overflow = '';
+      btn.textContent = '−';
+      btn.title = 'Minimize pane';
+
+      // Restore width from localStorage 'script-pane-width-px'; if absent use default 360px
+      const savedWidth = localStorage.getItem('script-pane-width-px');
+      if (savedWidth != null) {
+        const parsed = parseFloat(savedWidth);
+        if (Number.isFinite(parsed)) {
+          pane.style.width = parsed + 'px';
+          pane.style.flex = 'none';
+        } else {
+          pane.style.width = '';
+          pane.style.flex = 'none';
+        }
+      } else {
+        pane.style.width = '360px';
+        pane.style.flex = 'none';
+      }
+    }
+  });
+}
+
 // ── Init ──
 
 async function init() {
   wireEvents();
   initPaneResize();
+  initPaneMinimize();
   connectSSE();
   try {
     const projects = await listProjects();
