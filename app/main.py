@@ -17,6 +17,7 @@ Endpoints:
     PUT  /api/project/{slug}/script         → write script.md
     PUT  /api/project/{slug}/storyboard/{scene_id}              → update scene fields (incl. asset_timeline)
     POST /api/project/{slug}/storyboard/{scene_id}/image        → request generation (agent listens via SSE)
+    POST /api/project/{slug}/storyboard/{scene_id}/image/edit   → edit existing image via xAI Grok Imagine Image Edit (registers in asset_timeline)
     GET  /api/project/{slug}/storyboard/{scene_id}/timeline     → get asset_timeline
     PUT  /api/project/{slug}/storyboard/{scene_id}/timeline     → set/replace asset_timeline (emits timeline-updated SSE)
     POST /api/project/{slug}/storyboard/{scene_id}/render-scene → render single-scene preview (asset_timeline-driven)
@@ -25,6 +26,7 @@ Endpoints:
     GET  /api/project/{slug}/export-presets → list presets for Export tab
     POST /api/project/{slug}/render-scene-preview → export current scene with {width,height,crf,preset} + scene_id
     (full /render also accepts ExportParams body to drive assemble with custom settings)
+    GET  /api/project/{slug}/media/{file_path:path}             → serve project files (images, videos) as public URLs for external APIs (e.g. xAI image edit)
 
 Image paths in storyboard.json are always relative to the project directory
 (e.g. "scenes/scene-01-v1.png") and served at /projects/{slug}/{path}.
@@ -146,6 +148,30 @@ async def sse_watch(request: Request):
     )
 
 
+# ── Media serving (for xAI image edit API which needs public URLs) ──
+
+@app.get("/api/project/{slug}/media/{file_path:path}")
+async def serve_project_media(slug: str, file_path: str):
+    """Serve project files (images, videos) as public URLs for external APIs.
+    
+    Resolves file_path relative to projects/{slug}/. Returns 404 for 
+    non-existent files or paths that escape the project directory.
+    """
+    slug = slug.strip()
+    proj = project_dir(slug)  # validates slug
+    if not proj.exists():
+        raise HTTPException(404, f"Project '{slug}' not found")
+    
+    # Security: resolve and verify path stays within project dir
+    resolved = (proj / file_path).resolve()
+    if not str(resolved).startswith(str(proj.resolve())):
+        raise HTTPException(404, "Path escapes project directory")
+    if not resolved.is_file():
+        raise HTTPException(404, "File not found")
+    
+    return FileResponse(resolved)
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -229,6 +255,76 @@ async def update_scene(slug: str, scene_id: int, body: SceneUpdate):
     save_storyboard(sb_path, sb)
     await sse_notify(slug, "storyboard-updated")
     return {"ok": True, "scene": scene_id}
+
+
+class ImageEditRequest(BaseModel):
+    source_image_path: str
+    prompt: str
+
+
+@app.post("/api/project/{slug}/storyboard/{scene_id}/image/edit")
+async def edit_scene_image(slug: str, scene_id: int, body: ImageEditRequest):
+    """
+    Edit an existing image using xAI Grok Imagine Image Edit.
+    Takes a source image path and a natural language edit prompt.
+    Returns the edited variant path and URL.
+    """
+    slug = slug.strip()
+    project_dir(slug)  # validate
+    
+    sb_path, sb = load_storyboard(slug)
+    scene = find_scene(sb, scene_id)
+    
+    # Resolve source path relative to project directory
+    source_path = Path(normalize_image_path(slug, body.source_image_path))
+    source_abs = project_dir(slug) / source_path
+    if not source_abs.exists():
+        raise HTTPException(404, f"Source image not found: {source_path}")
+    
+    await sse_notify(slug, f"image-editing:{scene_id}")
+    
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            _edit_image_sync,
+            str(source_abs),
+            body.prompt.strip(),
+            str(project_dir(slug) / "scenes"),
+            slug,
+        )
+    except Exception as e:
+        await sse_notify(slug, f"image-edit-failed:{scene_id}")
+        raise HTTPException(500, f"Edit failed: {e}")
+    
+    if not result.get("ok"):
+        await sse_notify(slug, f"image-edit-failed:{scene_id}")
+        raise HTTPException(500, result.get("error", "Unknown edit error"))
+    
+    # Register edited image in asset_timeline
+    img_path = Path(result["path"])
+    rel_path = f"scenes/{img_path.name}"
+    entry = {
+        "type": "still",
+        "path": rel_path,
+        "layer": 0,
+        "caption_phrases": [],
+        "prompt": body.prompt.strip(),
+        "edited_from": body.source_image_path,
+    }
+    if not isinstance(scene.get("asset_timeline"), list):
+        scene["asset_timeline"] = []
+    scene["asset_timeline"].append(entry)
+    save_storyboard(sb_path, sb)
+    
+    await sse_notify(slug, f"still-registered:{scene_id}")
+    return {
+        "ok": True,
+        "scene": scene_id,
+        "path": rel_path,
+        "url": result.get("url"),
+        "revised_prompt": result.get("revised_prompt"),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -349,6 +445,45 @@ def _generate_video_sync(prompt: str, output_dir: str, image_path: str | None, d
     return {"ok": ok, "video_path" if ok else "error": result}
 
 
+def _edit_video_sync(source_path: str, prompt: str, output_dir: str) -> dict:
+    """Synchronous video edit wrapper — called from thread pool."""
+    import os as _os, sys as _sys
+    _sys.path.insert(0, str(Path(_os.environ.get('HERMES_HOME', _os.path.expanduser('~/.hermes'))) / 'hermes-agent'))
+    import importlib.util
+    bridge = Path(__file__).resolve().parent.parent / "lib" / "gen_bridge.py"
+    spec = importlib.util.spec_from_file_location("gen_bridge", bridge)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    ok, result = mod.edit_video(source_path, prompt, output_dir)
+    return {"ok": ok, "video_path" if ok else "error": result}
+
+
+def _edit_image_sync(source_path: str, prompt: str, output_dir: str, slug: str) -> dict:
+    """Synchronous wrapper for edit_image — called from thread pool."""
+    import os as _os, sys as _sys
+    _sys.path.insert(0, str(Path(_os.environ.get('HERMES_HOME', _os.path.expanduser('~/.hermes'))) / 'hermes-agent'))
+    import importlib.util
+    bridge = Path(__file__).resolve().parent.parent / "lib" / "gen_bridge.py"
+    spec = importlib.util.spec_from_file_location("gen_bridge", bridge)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    result = mod.edit_image(source_path, prompt, output_dir, slug)
+    return result
+
+
+def _extend_video_sync(source_path: str, prompt: str, output_dir: str, duration_secs: int) -> dict:
+    """Synchronous extend wrapper — called from thread pool."""
+    import os as _os, sys as _sys
+    _sys.path.insert(0, str(Path(_os.environ.get('HERMES_HOME', _os.path.expanduser('~/.hermes'))) / 'hermes-agent'))
+    import importlib.util
+    bridge = Path(__file__).resolve().parent.parent / "lib" / "gen_bridge.py"
+    spec = importlib.util.spec_from_file_location("gen_bridge", bridge)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    ok, result = mod.extend_video(source_path, prompt, output_dir, duration_secs)
+    return {"ok": ok, "video_path" if ok else "error": result}
+
+
 class VideoGenRequest(BaseModel):
     prompt: str = ""
     reference_image_paths: list[str] = []
@@ -410,6 +545,136 @@ async def request_scene_video(slug: str, scene_id: int, body: VideoGenRequest):
 
     await sse_notify(slug, f"video-registered:{scene_id}")
     return {"ok": True, "scene": scene_id, "path": rel_path, "status": "generated"}
+
+
+class VideoEditRequest(BaseModel):
+    source_video_path: str
+    prompt: str
+
+
+@app.post("/api/project/{slug}/storyboard/{scene_id}/video/edit")
+async def request_scene_video_edit(slug: str, scene_id: int, body: VideoEditRequest):
+    """
+    Edit an existing video clip for this scene using xAI video edits API.
+    Runs inline — progress streamed via SSE.
+    """
+    slug = slug.strip()
+    project_dir(slug)  # validate
+
+    sb_path, sb = load_storyboard(slug)
+    scene = find_scene(sb, scene_id)
+
+    # Resolve source video path (project-relative "scenes/..." -> absolute) for bridge read
+    src_rel = (body.source_video_path or "").strip().lstrip("/")
+    if not src_rel or ".." in Path(src_rel).parts or Path(src_rel).is_absolute():
+        raise HTTPException(400, f"Invalid source_video_path '{body.source_video_path}'")
+    src_full = project_dir(slug) / src_rel
+    if not src_full.exists() or not src_full.is_file():
+        raise HTTPException(400, f"Source video not found: {src_rel}")
+
+    await sse_notify(slug, f"video-editing:{scene_id}")
+
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            _edit_video_sync,
+            str(src_full),
+            body.prompt,
+            str(project_dir(slug) / "scenes"),
+        )
+    except Exception as e:
+        await sse_notify(slug, f"video-failed:{scene_id}")
+        raise HTTPException(500, f"Video edit failed: {e}")
+
+    if not result["ok"]:
+        await sse_notify(slug, f"video-failed:{scene_id}")
+        raise HTTPException(500, result.get("error", "Unknown error"))
+
+    vid_path = Path(result["video_path"])
+    rel_path = f"scenes/{vid_path.name}"
+    entry = {
+        "type": "video",
+        "path": rel_path,
+        "layer": 0,
+        "duration_secs": 5.0,
+        "aspect_ratio": "16:9",
+        "caption_phrases": [],
+        "prompt": body.prompt,
+    }
+    if not isinstance(scene.get("asset_timeline"), list):
+        scene["asset_timeline"] = []
+    scene["asset_timeline"].append(entry)
+    save_storyboard(sb_path, sb)
+
+    await sse_notify(slug, f"video-registered:{scene_id}")
+    return {"ok": True, "scene": scene_id, "path": rel_path}
+
+
+class VideoExtendRequest(BaseModel):
+    source_video_path: str
+    prompt: str
+    duration_secs: int = 4
+
+
+@app.post("/api/project/{slug}/storyboard/{scene_id}/video/extend")
+async def request_scene_video_extend(slug: str, scene_id: int, body: VideoExtendRequest):
+    """
+    Extend an existing video clip for this scene using xAI video extensions API.
+    Runs inline — progress streamed via SSE (video-extending, video-registered or video-failed).
+    """
+    slug = slug.strip()
+    project_dir(slug)  # validate
+
+    sb_path, sb = load_storyboard(slug)
+    scene = find_scene(sb, scene_id)
+
+    # Resolve and validate source video path (relative to project dir, must exist)
+    src_rel = (body.source_video_path or "").strip().lstrip("/")
+    if not src_rel or ".." in Path(src_rel).parts or Path(src_rel).is_absolute():
+        raise HTTPException(400, f"Invalid source_video_path '{body.source_video_path}'")
+    src_full = project_dir(slug) / src_rel
+    if not src_full.exists() or not src_full.is_file():
+        raise HTTPException(400, f"Source video not found: {src_rel}")
+
+    await sse_notify(slug, f"video-extending:{scene_id}")
+
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            _extend_video_sync,
+            str(src_full),
+            body.prompt,
+            str(project_dir(slug) / "scenes"),
+            body.duration_secs,
+        )
+    except Exception as e:
+        await sse_notify(slug, f"video-failed:{scene_id}")
+        raise HTTPException(500, f"Video extend failed: {e}")
+
+    if not result["ok"]:
+        await sse_notify(slug, f"video-failed:{scene_id}")
+        raise HTTPException(500, result.get("error", "Unknown extend error"))
+
+    vid_path = Path(result["video_path"])
+    rel_path = f"scenes/{vid_path.name}"
+    entry = {
+        "type": "video",
+        "path": rel_path,
+        "layer": 0,
+        "duration_secs": body.duration_secs,
+        "aspect_ratio": "16:9",
+        "caption_phrases": [],
+        "prompt": body.prompt,
+    }
+    if not isinstance(scene.get("asset_timeline"), list):
+        scene["asset_timeline"] = []
+    scene["asset_timeline"].append(entry)
+    save_storyboard(sb_path, sb)
+
+    await sse_notify(slug, f"video-registered:{scene_id}")
+    return {"ok": True, "scene": scene_id, "path": rel_path, "status": "extended"}
 
 
 @app.post("/api/project/{slug}/render")

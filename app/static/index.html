@@ -92,6 +92,39 @@
   .video-upload-zone { border:2px dashed var(--border); border-radius:8px; padding:20px; text-align:center; margin-top:12px; cursor:pointer; transition:border-color 0.2s }
   .video-upload-zone.drag-over { border-color:var(--accent); background:var(--accent-dim-transparent) }
 
+  .video-edit-panel { margin-top:6px; padding:8px; background:var(--bg); border:1px solid var(--border); border-radius:6px; }
+  .video-edit-panel textarea { width:100%; min-height:50px; background:var(--surface); border:1px solid var(--border); border-radius:4px; color:var(--text); padding:6px; font-size:11px; resize:vertical; }
+  .video-edit-panel .edit-actions { display:flex; gap:6px; margin-top:6px; align-items:center; }
+  .video-edit-progress { font-size:10px; color:var(--accent); }
+
+  /* Extend video panel (overlay for /video/extend) */
+  .extend-panel {
+    position: fixed;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    width: 280px;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  }
+  .extend-panel label { font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px; }
+  .extend-panel textarea {
+    width: 100%; min-height: 60px; background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); padding: 6px; font-size: 12px; resize: vertical; border-radius: 4px;
+  }
+  .extend-panel .duration-presets { display: flex; gap: 4px; flex-wrap: wrap; margin: 6px 0; }
+  .extend-panel .duration-preset {
+    font-size: 10px; padding: 2px 8px; border-radius: 3px; cursor: pointer;
+    border: 1px solid var(--border); color: var(--text-muted); background: var(--bg);
+  }
+  .extend-panel .duration-preset.active {
+    border-color: var(--accent); color: var(--accent); background: var(--accent-dim-transparent);
+  }
+  .extend-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 99;
+  }
+
   /* ── Header ── */
   header {
     padding: 12px 24px;
@@ -920,6 +953,70 @@
     box-shadow: 0 2px 8px rgba(0,0,0,0.3); transition: transform 120ms ease;
   }
   .preview-fs-btn:hover { transform: translateY(-1px); }
+
+  /* Edit panel */
+  .preview-edit-btn {
+    position: absolute;
+    top: 8px;
+    right: 60px;  /* left of the fullscreen button which is at top:8px right:8px */
+    padding: 6px 12px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.15s;
+    z-index: 2;
+  }
+  .preview-image-container:hover .preview-edit-btn { opacity: 1; }
+  .preview-edit-btn:hover { transform: translateY(-1px); }
+  .preview-edit-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  .images-edit-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    margin-top: 8px;
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .images-edit-panel textarea {
+    width: 100%;
+    min-height: 60px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    padding: 8px;
+    font-size: 12px;
+    font-family: var(--font);
+    resize: vertical;
+  }
+  .images-edit-panel textarea:focus { outline: none; border-color: var(--accent); }
+  .images-edit-panel .edit-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .images-edit-panel .edit-actions button {
+    padding: 6px 16px;
+    font-size: 12px;
+  }
+  .images-edit-panel .edit-actions .edit-cancel-btn {
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .images-edit-panel .edit-actions .edit-cancel-btn:hover { color: var(--text); border-color: var(--text-muted); }
+
   .images-preview-info {
     display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
     padding: 6px 10px; font-size: 11px; color: var(--text-muted);
@@ -1665,10 +1762,18 @@
             <div class="preview-image-container">
               <img id="images-preview-img" alt="Selected image preview">
               <div class="preview-overlay">
+                <button type="button" class="preview-edit-btn" id="images-edit-btn">✨ Edit</button>
                 <button type="button" class="preview-fs-btn">🔍 View Fullscreen</button>
               </div>
             </div>
             <div class="images-preview-info" id="images-preview-info"></div>
+          </div>
+          <div class="images-edit-panel" id="images-edit-panel">
+            <textarea id="images-edit-prompt" placeholder="Describe how to edit this image..."></textarea>
+            <div class="edit-actions">
+              <button class="btn primary" id="images-edit-apply-btn">Apply Edit</button>
+              <button class="edit-cancel-btn" id="images-edit-cancel-btn">Cancel</button>
+            </div>
           </div>
 
           <!-- Compact sticky prompt + generate bar (merged prompt-area + actions) -->
@@ -1942,6 +2047,26 @@ function connectSSE() {
           }
         }
         break;
+      case 'video-editing':
+        if (Number.isFinite(sceneId)) {
+          state.generating.add(sceneId);
+          setRenderMsg(`Editing video for scene ${sceneId}…`);
+          if (state.scenes[state.v3Index]?.id === sceneId) {
+            const st = $('images-status');
+            if (st) { st.style.display = 'inline'; st.innerHTML = '<span class="spinner"></span> Editing video…'; }
+          }
+        }
+        break;
+      case 'video-extending':
+        if (Number.isFinite(sceneId)) {
+          state.generating.add(sceneId);
+          setRenderMsg(`Extending video for scene ${sceneId}…`);
+          if (state.scenes[state.v3Index]?.id === sceneId) {
+            const st = $('images-status');
+            if (st) { st.style.display = 'inline'; st.innerHTML = '<span class="spinner"></span> Extending video…'; }
+          }
+        }
+        break;
       case 'video-failed':
         if (Number.isFinite(sceneId)) {
           state.generating.delete(sceneId);
@@ -2138,6 +2263,120 @@ async function generateVideoClip() {
     if (st) { st.innerHTML = '⚠ Video failed'; }
   }
   if (btn) { btn.textContent = oldText; btn.disabled = false; }
+}
+
+
+function openExtendPanel(videoPath, videoName, sceneId, triggerBtn) {
+  // Remove any prior
+  document.querySelectorAll('.extend-overlay,.extend-panel').forEach(function(el){ el.remove(); });
+
+  const overlay = document.createElement('div');
+  overlay.className = 'extend-overlay';
+
+  const panel = document.createElement('div');
+  panel.className = 'extend-panel';
+
+  // Position near the clicked button if provided (via triggerBtn)
+  if (triggerBtn && triggerBtn.getBoundingClientRect) {
+    const r = triggerBtn.getBoundingClientRect();
+    let left = r.left;
+    if (left + 290 > window.innerWidth) left = window.innerWidth - 300;
+    panel.style.top = (r.bottom + 6) + 'px';
+    panel.style.left = Math.max(8, left) + 'px';
+  } else {
+    panel.style.top = '100px';
+    panel.style.left = '50%';
+    panel.style.transform = 'translateX(-50%)';
+  }
+
+  document.body.appendChild(overlay);
+  document.body.appendChild(panel);
+
+  panel.innerHTML =
+    '<div style="font-weight:600;font-size:12px;margin-bottom:6px;">Extend: ' + escHtml(videoName) + '</div>' +
+    '<label>Duration</label>' +
+    '<div class="duration-presets">' +
+      '<div class="duration-preset" data-d="2">2s</div>' +
+      '<div class="duration-preset active" data-d="4">4s</div>' +
+      '<div class="duration-preset" data-d="6">6s</div>' +
+      '<div class="duration-preset" data-d="8">8s</div>' +
+      '<input type="number" id="ext-dur-num" min="1" max="15" value="4" style="width:48px;font-size:10px;padding:1px 4px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:3px;" />' +
+    '</div>' +
+    '<label>Describe what happens next</label>' +
+    '<textarea id="ext-prompt" placeholder="e.g. camera slowly pushes in as the figure walks forward..."></textarea>' +
+    '<div style="display:flex;gap:6px;margin-top:8px;">' +
+      '<button class="btn" id="ext-do-btn" style="flex:1;font-size:11px;">Extend Video</button>' +
+      '<button class="btn" id="ext-cancel-btn" style="flex:1;font-size:11px;background:#444;">Cancel</button>' +
+    '</div>' +
+    '<div id="ext-status" style="margin-top:6px;font-size:10px;color:var(--text-muted);min-height:14px;"></div>';
+
+  // Wire duration presets
+  const presets = panel.querySelectorAll('.duration-preset');
+  const durInput = panel.querySelector('#ext-dur-num');
+  presets.forEach(function(pr) {
+    pr.onclick = function() {
+      presets.forEach(function(p){ p.classList.remove('active'); });
+      pr.classList.add('active');
+      durInput.value = pr.getAttribute('data-d');
+    };
+  });
+  durInput.onchange = durInput.oninput = function() {
+    var v = parseInt(durInput.value || '4', 10);
+    if (!isFinite(v)) v=4;
+    v = Math.max(1, Math.min(15, v));
+    durInput.value = v;
+    presets.forEach(function(p){ p.classList.remove('active'); });
+    var match = panel.querySelector('.duration-preset[data-d="' + v + '"]');
+    if (match) match.classList.add('active');
+  };
+
+  const doBtn = panel.querySelector('#ext-do-btn');
+  const cancelBtn = panel.querySelector('#ext-cancel-btn');
+  const statusEl = panel.querySelector('#ext-status');
+
+  cancelBtn.onclick = function() {
+    overlay.remove();
+    panel.remove();
+  };
+  overlay.onclick = function() {
+    // allow cancel via backdrop
+    overlay.remove();
+    panel.remove();
+  };
+
+  doBtn.onclick = async function() {
+    var promptVal = (panel.querySelector('#ext-prompt') || {}).value || '';
+    var durVal = parseInt((durInput || {}).value || '4', 10);
+    if (!isFinite(durVal)) durVal = 4;
+    durVal = Math.max(1, Math.min(15, durVal));
+
+    doBtn.disabled = true;
+    doBtn.innerHTML = '<span class="spinner"></span> Extending…';
+    statusEl.textContent = 'Calling extend API…';
+
+    try {
+      await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + sceneId + '/video/extend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_video_path: videoPath, prompt: promptVal, duration_secs: durVal })
+      });
+      statusEl.textContent = '✓ Success — video will appear after reload';
+      setTimeout(function() {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        if (panel.parentNode) panel.parentNode.removeChild(panel);
+      }, 700);
+    } catch (e) {
+      statusEl.textContent = 'Error: ' + (e && e.message ? e.message : e);
+      doBtn.disabled = false;
+      doBtn.textContent = 'Extend Video';
+    }
+  };
+
+  // auto focus prompt
+  setTimeout(function() {
+    var ta = panel.querySelector('#ext-prompt');
+    if (ta) ta.focus();
+  }, 30);
 }
 
 
@@ -3108,6 +3347,7 @@ function renderV3VideoClips() {
       var fname = p.split('/').pop() || '?';
       var addCode = "(async function(){ var sc=state.scenes[state.v3Index]; if(!sc)return; var sl=state.slug; var tl=JSON.parse(JSON.stringify(sc.asset_timeline||[])); tl.push({type:'video',path:'" + p + "',duration_secs:5.0,aspect_ratio:'16:9',layer:0,approved:false,caption_phrases:[]}); try{ await api('/api/project/'+encodeURIComponent(sl)+'/storyboard/'+sc.id+'/timeline',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({asset_timeline:tl})}); reloadCurrent(sl); }catch(e){alert(e.message||e);} })();";
       var delCode = "(async function(){ var sc=state.scenes[state.v3Index]; if(!sc)return; var sl=state.slug; var tl=JSON.parse(JSON.stringify(sc.asset_timeline||[])); var idx=-1; for(var i=0;i<tl.length;i++){ if(tl[i].type==='video' && tl[i].path==='" + p + "'){idx=i;break;} } if(idx>=0){ tl.splice(idx,1); try{ await api('/api/project/'+encodeURIComponent(sl)+'/storyboard/'+sc.id+'/timeline',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({asset_timeline:tl})}); reloadCurrent(sl); }catch(e){alert(e.message||e);} } })();";
+      var editCode = "(function(btn){event.stopPropagation();var card=btn.closest('.video-clip-card');if(!card)return;var panel=card.nextElementSibling;if(!panel||!panel.classList.contains('video-edit-panel')){panel=document.createElement('div');panel.className='video-edit-panel';card.parentNode.insertBefore(panel,card.nextSibling);var vpath='" + p + "';panel.innerHTML='<textarea placeholder=\"Describe how to edit this video...\"></textarea><div class=\"edit-actions\"><button class=\"btn\" style=\"font-size:9px;padding:1px 4px;\">Apply Edit</button><button class=\"btn\" style=\"font-size:9px;padding:1px 4px;\">Cancel</button></div>';var ta=panel.querySelector('textarea');var acts=panel.querySelector('.edit-actions');var ab=acts.querySelectorAll('button')[0];var cb=acts.querySelectorAll('button')[1];ab.onclick=function(e){e.stopPropagation();var pr=(ta&&ta.value||'').trim();if(!pr){setRenderMsg('Prompt required for edit',true);return;}var prog=document.createElement('div');prog.className='video-edit-progress';prog.innerHTML='<span class=\"spinner\"></span> Editing…';panel.appendChild(prog);ab.disabled=true;cb.disabled=true;var sl=state.slug;var sc=state.scenes[state.v3Index];if(!sc){if(prog.parentNode)prog.parentNode.removeChild(prog);ab.disabled=false;cb.disabled=false;return;}api('/api/project/'+encodeURIComponent(sl)+'/storyboard/'+sc.id+'/video/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source_video_path:vpath,prompt:pr})}).then(function(r){panel.style.display='none';}).catch(function(err){setRenderMsg('Edit failed: '+(err&&err.message||err),true);if(prog&&prog.parentNode)prog.parentNode.removeChild(prog);ab.disabled=false;cb.disabled=false;});};cb.onclick=function(e){e.stopPropagation();panel.style.display='none';};}panel.style.display=(panel.style.display==='block'?'none':'block');})(this);";
       var hasP = !!(v.prompt);
       html += '<div class="video-clip-card" data-prompt="' + escHtml(v.prompt || '') + '" data-fname="' + escHtml(fname) + '" onclick="(function(el){var pr=el.getAttribute(\'data-prompt\');var ta=document.getElementById(\'v3-vc-prompt\');var lab=document.getElementById(\'v3-vc-prompt-label\');if(ta&&pr){ta.value=pr;ta.dataset.userEdited=\'false\';}if(lab&&pr){lab.textContent=\'Prompt from \'+el.getAttribute(\'data-fname\');}})(this)">';
       if (hasP) {
@@ -3117,6 +3357,8 @@ function renderV3VideoClips() {
       html += '<div class="info">' + dur + 's · ' + ar + '<br><span style="font-size:9px;opacity:.7;">' + fname + '</span></div>';
       html += '<div style="padding:3px 4px 4px;display:flex;gap:4px;border-top:1px solid var(--border);">';
       html += '<button class="btn" style="flex:1;font-size:9px;padding:1px 3px;" onclick="' + addCode + '">Add to Timeline</button>';
+      html += '<button class="btn" style="flex:1;font-size:9px;padding:1px 3px;" onclick="' + editCode + '">✂️ Edit</button>';
+      html += '<button class="btn" style="flex:1;font-size:9px;padding:1px 3px;background:var(--surface);color:var(--accent);" onclick="(function(b){openExtendPanel(\'' + p + '\',\'' + escHtml(fname) + '\',' + scene.id + ',b);})(this);event.stopPropagation();">⏭ Extend</button>';
       html += '<button class="btn" style="flex:1;font-size:9px;padding:1px 3px;background:#c0392b;color:#fff;" onclick="' + delCode + '">Delete</button>';
       html += '</div>';
       html += '</div>';
@@ -4811,6 +5053,69 @@ async function init() {
       if (s && s.slug) loadExportPresets(s.slug);
     } catch(e){}
   }, 0);
+
+  // ── Image Edit ──
+
+  const _editSceneId = () => {
+    const scene = state.scenes[state.v3Index];
+    return scene ? scene.id : null;
+  };
+
+  const _editSourcePath = () => {
+    const scene = state.scenes[state.v3Index];
+    if (!scene) return null;
+    const versions = (scene.asset_timeline || []).filter(a => a.type === 'still' && a.path);
+    const idx = Math.min(_selectedImageIndex || 0, versions.length - 1);
+    return versions[idx] ? versions[idx].path : null;
+  };
+
+  // Edit button click → show edit panel
+  $('images-edit-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const panel = $('images-edit-panel');
+    panel.style.display = panel.style.display === 'flex' ? 'none' : 'flex';
+    if (panel.style.display === 'flex') $('images-edit-prompt').focus();
+  });
+
+  // Cancel button
+  $('images-edit-cancel-btn').addEventListener('click', () => {
+    $('images-edit-panel').style.display = 'none';
+    $('images-edit-prompt').value = '';
+  });
+
+  // Apply Edit button
+  $('images-edit-apply-btn').addEventListener('click', async () => {
+    const prompt = $('images-edit-prompt').value.trim();
+    if (!prompt) { setRenderMsg('Enter an edit prompt', true); return; }
+    const sceneId = _editSceneId();
+    const sourcePath = _editSourcePath();
+    if (!sceneId || !sourcePath) { setRenderMsg('No image selected', true); return; }
+
+    const btn = $('images-edit-apply-btn');
+    const oldHTML = btn.innerHTML;
+    btn.innerHTML = '<span class=\"spinner\"></span> Editing…';
+    btn.disabled = true;
+    $('images-edit-cancel-btn').disabled = true;
+    setRenderMsg('Editing image…');
+
+    try {
+      const result = await api(`/api/project/${encodeURIComponent(state.slug)}/storyboard/${sceneId}/image/edit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_image_path: sourcePath, prompt }),
+      });
+      setRenderMsg('Edit complete ✓');
+      $('images-edit-panel').style.display = 'none';
+      $('images-edit-prompt').value = '';
+      await loadProject(state.slug);
+    } catch (err) {
+      setRenderMsg('Edit failed: ' + (err.message || err), true);
+    } finally {
+      btn.innerHTML = oldHTML;
+      btn.disabled = false;
+      $('images-edit-cancel-btn').disabled = false;
+    }
+  });
 
 })();
 init();
