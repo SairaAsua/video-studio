@@ -1160,6 +1160,90 @@
     font-size: 11px;
     padding: 2px 6px;
   }
+
+  /* ── Export tab (v3) — appended only, compact dark controls using CSS vars ── */
+  #v3-tab-export {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 0;
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+  #v3-tab-export.hidden { display: none; }
+
+  .export-controls {
+    padding: 12px 14px;
+    font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .export-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .export-row label {
+    width: 92px;
+    flex-shrink: 0;
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+  .export-row select,
+  .export-row input[type="number"] {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-size: 12px;
+    font-family: var(--font);
+    min-width: 120px;
+  }
+  .export-row input[type="number"] { width: 90px; }
+  .export-row input[type="range"] {
+    flex: 1;
+    accent-color: var(--accent);
+  }
+  .export-row .crf-val {
+    font-family: var(--font-mono);
+    min-width: 24px;
+    text-align: right;
+    color: var(--text);
+  }
+  .export-custom {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 100px;
+    flex-wrap: wrap;
+  }
+  .export-custom label {
+    width: auto;
+    margin-right: 4px;
+    color: var(--text-muted);
+  }
+  .export-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .export-actions .btn {
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+  #export-result {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    word-break: break-all;
+  }
+  #export-result a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  #export-result a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -1227,6 +1311,50 @@
         </div>
         <div class="v3-tab-body hidden" id="v3-tab-captions"></div>
         <div class="v3-tab-body hidden" id="v3-tab-timeline"></div>
+        <div class="v3-tab-body hidden" id="v3-tab-export">
+          <div class="export-controls">
+            <div class="export-row">
+              <label for="export-preset-select">Preset</label>
+              <select id="export-preset-select">
+                <option value="4K Landscape (3840×2160)">4K Landscape (3840×2160)</option>
+                <option value="1080p Landscape (1920×1080)" selected>1080p Landscape (1920×1080)</option>
+                <option value="720p Landscape (1280×720)">720p Landscape (1280×720)</option>
+                <option value="1080p Portrait (1080×1920)">1080p Portrait (1080×1920)</option>
+                <option value="1080p Square (1080×1080)">1080p Square (1080×1080)</option>
+                <option value="Custom">Custom</option>
+              </select>
+            </div>
+            <div class="export-custom" id="export-custom-size" style="display:none">
+              <label for="export-width">Width</label>
+              <input id="export-width" type="number" value="1920" min="64" max="8192" step="1">
+              <label for="export-height">Height</label>
+              <input id="export-height" type="number" value="1080" min="64" max="8192" step="1">
+            </div>
+            <div class="export-row">
+              <label for="export-crf">CRF <span id="export-crf-val" class="crf-val">23</span></label>
+              <input id="export-crf" type="range" min="0" max="51" value="23" step="1">
+            </div>
+            <div class="export-row">
+              <label for="export-preset">x264 Preset</label>
+              <select id="export-preset">
+                <option value="ultrafast">ultrafast</option>
+                <option value="superfast">superfast</option>
+                <option value="veryfast">veryfast</option>
+                <option value="faster">faster</option>
+                <option value="fast">fast</option>
+                <option value="medium" selected>medium</option>
+                <option value="slow">slow</option>
+                <option value="slower">slower</option>
+                <option value="veryslow">veryslow</option>
+              </select>
+            </div>
+            <div class="export-actions">
+              <button class="btn primary" id="export-scene-btn">Export Current Scene</button>
+              <button class="btn primary" id="export-full-btn">Export Full Video</button>
+            </div>
+            <div id="export-result"></div>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -3559,6 +3687,266 @@ async function init() {
   }
 }
 
+// ── Export tab (v3) JS — appended only; no prior HTML/CSS/JS modified ──
+(function(){
+  'use strict';
+  // Globals for this module
+  let exportPresets = [];
+
+  function $(id) { return document.getElementById(id); } // local alias safe (global $ exists)
+
+  async function loadExportPresets(slug) {
+    if (!slug) return;
+    try {
+      const apiFn = (typeof api !== 'undefined') ? api : (p => fetch(p).then(r => r.ok ? r.json() : Promise.reject(new Error('fetch'))));
+      const data = await apiFn(`/api/project/${encodeURIComponent(slug)}/export-presets`);
+      exportPresets = (data && data.presets) || [];
+      populateExportPresetSelect();
+    } catch (e) {
+      console.warn('[export] presets load failed, using fallback', e);
+      exportPresets = getFallbackPresets();
+      populateExportPresetSelect();
+    }
+  }
+
+  function getFallbackPresets() {
+    return [
+      {label: "4K Landscape (3840×2160)", width: 3840, height: 2160, crf: 18, preset: "slow"},
+      {label: "1080p Landscape (1920×1080)", width: 1920, height: 1080, crf: 23, preset: "medium"},
+      {label: "720p Landscape (1280×720)", width: 1280, height: 720, crf: 23, preset: "medium"},
+      {label: "1080p Portrait (1080×1920)", width: 1080, height: 1920, crf: 23, preset: "medium"},
+      {label: "1080p Square (1080×1080)", width: 1080, height: 1080, crf: 23, preset: "medium"},
+      {label: "Custom", custom: true}
+    ];
+  }
+
+  function populateExportPresetSelect() {
+    const sel = $('export-preset-select');
+    if (!sel) return;
+    const prev = sel.value;
+    sel.innerHTML = '';
+    const presets = (exportPresets && exportPresets.length) ? exportPresets : getFallbackPresets();
+    presets.forEach((p) => {
+      const opt = document.createElement('option');
+      opt.value = p.label || (p.custom ? 'Custom' : (p.width + 'x' + p.height));
+      opt.textContent = p.label || opt.value;
+      if (p.custom) opt.dataset.custom = '1';
+      if (p.width != null) opt.dataset.width = String(p.width);
+      if (p.height != null) opt.dataset.height = String(p.height);
+      if (p.crf != null) opt.dataset.crf = String(p.crf);
+      if (p.preset) opt.dataset.preset = p.preset;
+      sel.appendChild(opt);
+    });
+    // default to 1080p Landscape if present
+    let target = Array.from(sel.options).find(o => /1080p Landscape/.test(o.value));
+    if (!target) target = Array.from(sel.options).find(o => o.value === prev);
+    if (target) sel.value = target.value;
+    else if (sel.options.length > 0) sel.selectedIndex = Math.min(1, sel.options.length-1);
+    applyExportPresetSelection();
+  }
+
+  function applyExportPresetSelection() {
+    const sel = $('export-preset-select');
+    const customDiv = $('export-custom-size');
+    if (!sel) return;
+    const opt = sel.selectedOptions && sel.selectedOptions[0];
+    const isCustom = !!(opt && (opt.dataset.custom === '1' || opt.value === 'Custom'));
+    if (customDiv) customDiv.style.display = isCustom ? 'flex' : 'none';
+    if (!isCustom && opt) {
+      const wEl = $('export-width');
+      const hEl = $('export-height');
+      const cEl = $('export-crf');
+      const pEl = $('export-preset');
+      if (opt.dataset.width && wEl) wEl.value = opt.dataset.width;
+      if (opt.dataset.height && hEl) hEl.value = opt.dataset.height;
+      if (opt.dataset.crf && cEl) { cEl.value = opt.dataset.crf; updateCrfLabel(); }
+      if (opt.dataset.preset && pEl) pEl.value = opt.dataset.preset;
+    }
+  }
+
+  function updateCrfLabel() {
+    const val = $('export-crf-val');
+    const rng = $('export-crf');
+    if (val && rng) val.textContent = rng.value;
+  }
+
+  async function exportCurrentScene() {
+    const s = (typeof state !== 'undefined' ? state : (window.state || {}));
+    const slug = s.slug || null;
+    const scenesArr = s.scenes || [];
+    const vidx = (typeof s.v3Index === 'number' ? s.v3Index : 0);
+    const scene = scenesArr[vidx] || null;
+    if (!slug || !scene) {
+      const r = $('export-result'); if (r) r.textContent = 'No project or scene selected.';
+      return;
+    }
+    const w = parseInt($('export-width').value, 10) || 1920;
+    const h = parseInt($('export-height').value, 10) || 1080;
+    const crf = parseInt($('export-crf').value, 10);
+    const preset = $('export-preset').value || 'medium';
+    const btn = $('export-scene-btn');
+    const res = $('export-result');
+    if (btn) btn.disabled = true;
+    if (res) res.textContent = 'Rendering scene export…';
+    try {
+      const apiFn = (typeof api !== 'undefined') ? api : (async (p, o) => {
+        const r = await fetch(p, o);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      });
+      const data = await apiFn(`/api/project/${encodeURIComponent(slug)}/render-scene-preview`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({scene_id: scene.id, width: w, height: h, crf: crf, preset: preset})
+      });
+      if (res) {
+        const url = data.url || '';
+        res.innerHTML = 'Scene exported. ' + (url ? `<a href="${url}" download>Download MP4</a>` : '');
+      }
+    } catch (err) {
+      if (res) res.textContent = 'Export error: ' + (err.message || err);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function exportFullVideo() {
+    const s = (typeof state !== 'undefined' ? state : (window.state || {}));
+    const slug = s.slug || null;
+    if (!slug) {
+      const r = $('export-result'); if (r) r.textContent = 'No project selected.';
+      return;
+    }
+    const w = parseInt($('export-width').value, 10) || 1920;
+    const h = parseInt($('export-height').value, 10) || 1080;
+    const crf = parseInt($('export-crf').value, 10);
+    const preset = $('export-preset').value || 'medium';
+    const btn = $('export-full-btn');
+    const res = $('export-result');
+    if (btn) btn.disabled = true;
+    if (res) res.textContent = 'Rendering full video export…';
+    try {
+      const apiFn = (typeof api !== 'undefined') ? api : (async (p, o) => { const r = await fetch(p, o); if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); });
+      const data = await apiFn(`/api/project/${encodeURIComponent(slug)}/render`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({width: w, height: h, crf: crf, preset: preset})
+      });
+      if (res) {
+        const url = data.url || data.path || '';
+        res.innerHTML = (data.message || 'Full export done.') + (url ? ` <a href="${url}" download>Download</a>` : '');
+      }
+    } catch (err) {
+      if (res) res.textContent = 'Export error: ' + (err.message || err);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function initExportTab() {
+    const sel = $('export-preset-select');
+    if (!sel || sel._exportWired) return;
+    sel._exportWired = true;
+
+    sel.addEventListener('change', applyExportPresetSelection);
+
+    const wEl = $('export-width');
+    const hEl = $('export-height');
+    const onCustomInput = () => {
+      const s = $('export-preset-select');
+      if (s && s.value !== 'Custom') {
+        const co = Array.from(s.options).find(o => o.value === 'Custom');
+        if (co) { s.value = 'Custom'; applyExportPresetSelection(); }
+      }
+    };
+    if (wEl) wEl.addEventListener('input', onCustomInput);
+    if (hEl) hEl.addEventListener('input', onCustomInput);
+
+    const crfEl = $('export-crf');
+    if (crfEl) crfEl.addEventListener('input', updateCrfLabel);
+
+    const sb = $('export-scene-btn');
+    if (sb) sb.addEventListener('click', exportCurrentScene);
+    const fb = $('export-full-btn');
+    if (fb) fb.addEventListener('click', exportFullVideo);
+
+    updateCrfLabel();
+    // ensure select reflects loaded or fallback
+    if (!exportPresets.length) {
+      exportPresets = getFallbackPresets();
+    }
+    populateExportPresetSelect();
+  }
+
+  function injectExportTabButton() {
+    const bar = $('v3-tab-bar');
+    if (!bar) return;
+    if (bar.querySelector('[data-v3-tab="export"]')) return;
+    const btn = document.createElement('button');
+    btn.className = 'tab-btn';
+    btn.setAttribute('data-v3-tab', 'export');
+    btn.textContent = 'Export';
+    bar.appendChild(btn);
+  }
+
+  // Patch switchV3Tab to support export tab (without editing original function)
+  const _origSwitchV3Tab = (typeof switchV3Tab === 'function') ? switchV3Tab : null;
+  switchV3Tab = function(name) {
+    document.querySelectorAll('#v3-tab-bar [data-v3-tab]').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.v3Tab === name);
+    });
+    ['assets', 'captions', 'timeline'].forEach((tab) => {
+      const el = $(`v3-tab-${tab}`);
+      if (el) el.classList.toggle('hidden', tab !== name);
+    });
+    const expEl = $('v3-tab-export');
+    if (expEl) expEl.classList.toggle('hidden', name !== 'export');
+    if (name === 'assets' && typeof renderV3Assets === 'function') renderV3Assets();
+    if (name === 'captions' && typeof renderV3Captions === 'function') renderV3Captions();
+    if (name === 'timeline' && typeof renderV3Timeline === 'function') renderV3Timeline();
+    if (name === 'export') {
+      initExportTab();
+    }
+  };
+
+  // Patch renderV3Workspace to re-init export tab when workspace re-renders (scene change)
+  const _origRenderV3Workspace = (typeof renderV3Workspace === 'function') ? renderV3Workspace : null;
+  if (_origRenderV3Workspace) {
+    renderV3Workspace = function() {
+      _origRenderV3Workspace.apply(this, arguments);
+      const active = document.querySelector('#v3-tab-bar .tab-btn.active');
+      if (active && active.dataset.v3Tab === 'export') {
+        initExportTab();
+      }
+    };
+  }
+
+  // Patch loadProject so presets load on project load (without editing original)
+  const _origLoadProject = (typeof loadProject === 'function') ? loadProject : null;
+  if (_origLoadProject) {
+    loadProject = async function(slug) {
+      const ret = await _origLoadProject.apply(this, arguments);
+      try {
+        const s = (typeof state !== 'undefined' ? state : (window.state || {}));
+        const sl = slug || (s && s.slug);
+        if (sl) await loadExportPresets(sl);
+      } catch(e) { /* ignore */ }
+      return ret;
+    };
+  }
+
+  // Inject button and ensure initial wiring if tab already somehow active (on script parse)
+  injectExportTabButton();
+
+  // If a project was already loaded before this script append (unlikely), load presets
+  setTimeout(() => {
+    try {
+      const s = (typeof state !== 'undefined' ? state : (window.state || {}));
+      if (s && s.slug) loadExportPresets(s.slug);
+    } catch(e){}
+  }, 0);
+
+})();
 init();
 </script>
 </body>

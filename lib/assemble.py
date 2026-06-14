@@ -74,7 +74,10 @@ def _strip_filter_for_audio_check(audio_path: Path, duration: float) -> list:
 
 def render_scene(scene: dict, paths: dict, quality: str = "draft",
                  width: int = 1920, height: int = 1080,
-                 debug_filter: bool = False) -> Path:
+                 crf: int | None = None,
+                 x264_preset: str | None = None,
+                 debug_filter: bool = False,
+                 output_path: Path | None = None) -> Path:
     """
     Render a single scene from asset_timeline (multi-still layered composition):
     black canvas + per-asset looped stills (with per-asset motion + offset captions + opacity)
@@ -243,8 +246,8 @@ def render_scene(scene: dict, paths: dict, quality: str = "draft",
         "-filter_complex", filter_complex,
         "-map", "[v]", "-map", "[aud]",
         "-t", str(total_duration),
-        "-c:v", "libx264", "-preset", "fast" if quality == "draft" else "slow",
-        "-crf", "28" if quality == "draft" else "18",
+        "-c:v", "libx264", "-preset", (x264_preset or ("fast" if quality == "draft" else "slow")),
+        "-crf", (str(crf) if crf is not None else ("28" if quality == "draft" else "18")),
         "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "192k",
         "-shortest",
@@ -283,7 +286,7 @@ def _probe_duration(path: Path) -> float:
 
 
 def concat_scenes(scene_paths: list[Path], output_path: Path,
-                  transition: dict | None = None, quality: str = "draft") -> Path:
+                  transition: dict | None = None, x264_preset: str = "medium", crf: str = "23") -> Path:
     """
     Concatenate rendered scene clips.
 
@@ -384,8 +387,8 @@ def concat_scenes(scene_paths: list[Path], output_path: Path,
     for p in scene_paths:
         cmd_inputs += ["-i", str(p)]
 
-    preset = "fast" if quality == "draft" else "slow"
-    crf = "28" if quality == "draft" else "18"
+    preset = x264_preset
+    crf, quality = str(crf), None
 
     cmd = [
         "ffmpeg", "-y",
@@ -415,25 +418,39 @@ def concat_scenes(scene_paths: list[Path], output_path: Path,
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: assemble.py <slug> [--quality draft|high] [--scene <id>] [--debug-filter]")
+        print("Usage: assemble.py <slug> [--width W] [--height H] [--crf N] [--preset ultrafast|...|veryslow] [--scene <id>] [--debug-filter]")
         sys.exit(1)
 
     slug = sys.argv[1]
-    quality = "draft"
+    width = 1920
+    height = 1080
+    crf = None
+    x264_preset = None
     single_scene = None
     debug_filter = False
 
     args = sys.argv[2:]
     i = 0
     while i < len(args):
-        if args[i] == "--quality" and i + 1 < len(args):
-            quality = args[i + 1]; i += 2
+        if args[i] == "--width" and i + 1 < len(args):
+            width = int(args[i + 1]); i += 2
+        elif args[i] == "--height" and i + 1 < len(args):
+            height = int(args[i + 1]); i += 2
+        elif args[i] == "--crf" and i + 1 < len(args):
+            crf = int(args[i + 1]); i += 2
+        elif args[i] == "--preset" and i + 1 < len(args):
+            x264_preset = args[i + 1]; i += 2
         elif args[i] == "--scene" and i + 1 < len(args):
             single_scene = int(args[i + 1]); i += 2
         elif args[i] == "--debug-filter":
             debug_filter = True; i += 1
         else:
             i += 1
+
+    if x264_preset is None:
+        x264_preset = "medium"
+    if crf is None:
+        crf = 23
 
     paths = get_paths(slug)
     sb = json.loads(paths["storyboard"].read_text())
@@ -449,7 +466,7 @@ def main():
         if not scene:
             print(f"Scene {single_scene} not found", file=sys.stderr)
             sys.exit(1)
-        output = render_scene(scene, paths, quality, debug_filter=debug_filter)
+        output = render_scene(scene, paths, "draft", width=width, height=height, crf=crf, x264_preset=x264_preset, debug_filter=debug_filter)
         print(f"Rendered: {output}")
         return
 
@@ -465,14 +482,14 @@ def main():
         print(f"ERROR: {len(invalid)} scenes without a valid 'still' or 'video' asset (type+path): {invalid}")
         sys.exit(1)
 
-    print(f"Rendering {len(scenes)} scenes (quality={quality})…")
+    print(f"Rendering {len(scenes)} scenes (preset={x264_preset}, crf={crf}, {width}x{height})…")
     rendered = []
     for scene in scenes:
         asset = (scene.get("asset_timeline") or [{}])[0]
         print(f"  scene {scene['id']:02d} ({asset.get('duration_secs', 0.0):.1f}s, "
               f"motion={asset.get('motion') or asset.get('motion_preset', '?')}, "
               f"captions={len(asset.get('caption_phrases', []))})")
-        output = render_scene(scene, paths, quality, debug_filter=debug_filter)
+        output = render_scene(scene, paths, "draft", width=width, height=height, crf=crf, x264_preset=x264_preset, debug_filter=debug_filter)
         rendered.append(output)
 
     if debug_filter:
@@ -481,8 +498,8 @@ def main():
 
     # Concat
     paths["exports"].mkdir(parents=True, exist_ok=True)
-    final = paths["exports"] / f"{slug}-{quality}.mp4"
-    concat_scenes(rendered, final, transition, quality)
+    final = paths["exports"] / f"{slug}-export.mp4"
+    concat_scenes(rendered, final, transition, x264_preset=x264_preset, crf=crf)
     print(f"\nFinal: {final} ({final.stat().st_size // 1024} KB)")
 
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 video-studio dashboard — FastAPI server on localhost:8900.
 
@@ -19,7 +20,11 @@ Endpoints:
     GET  /api/project/{slug}/storyboard/{scene_id}/timeline     → get asset_timeline
     PUT  /api/project/{slug}/storyboard/{scene_id}/timeline     → set/replace asset_timeline (emits timeline-updated SSE)
     POST /api/project/{slug}/storyboard/{scene_id}/render-scene → render single-scene preview (asset_timeline-driven)
-    POST /api/project/{slug}/render         → trigger render (gated on still asset with path in asset_timeline)
+    POST /api/project/{slug}/render-scene-preview → render scene preview with export {scene_id,width,height,crf,preset} (maps preset)
+    POST /api/project/{slug}/render         → trigger render (gated on still asset with path in asset_timeline); optional body for full export params
+    GET  /api/project/{slug}/export-presets → list presets for Export tab
+    POST /api/project/{slug}/render-scene-preview → export current scene with {width,height,crf,preset} + scene_id
+    (full /render also accepts ExportParams body to drive assemble with custom settings)
 
 Image paths in storyboard.json are always relative to the project directory
 (e.g. "scenes/scene-01-v1.png") and served at /projects/{slug}/{path}.
@@ -45,6 +50,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from typing import Optional
 
 WORKSPACE = Path(__file__).resolve().parent.parent
 PROJECTS = WORKSPACE / "projects"
@@ -283,9 +289,12 @@ async def request_scene_image(slug: str, scene_id: int):
 
 
 @app.post("/api/project/{slug}/render")
-async def trigger_render(slug: str):
+async def trigger_render(slug: str, body: Optional["ExportParams"] = None):  # ExportParams defined later in file; string fwd ref for annotation eval
     """Trigger assembly. Gates on every scene having at least one 'still'
-    asset with a path in its asset_timeline."""
+    asset with a path in its asset_timeline.
+    If body with width/height/crf/preset provided (from Export tab), performs
+    a synchronous full export render and returns the resulting file url.
+    """
     _, sb = load_storyboard(slug)
     missing_still = [
         s["id"] for s in sb.get("scenes", [])
@@ -297,9 +306,60 @@ async def trigger_render(slug: str):
     if missing_still:
         raise HTTPException(400, f"Scenes missing still asset in timeline: {missing_still}")
 
-    # TODO: actually call assemble.py in background
-    await sse_notify(slug, "render-queued")
-    return {"ok": True, "message": "Render queued"}
+    if body is None:
+        # legacy / tools-render buttons: just queue notification (agent or manual may pick up)
+        await sse_notify(slug, "render-queued")
+        return {"ok": True, "message": "Render queued"}
+
+    # Export full with params: run assemble synchronously
+    exports_dir = project_dir(slug) / "exports"
+    exports_dir.mkdir(parents=True, exist_ok=True)
+
+    # Map the preset to assemble.py --preset flag (fast|balanced|quality)
+    p = (body.preset or "medium").lower()
+    if p in {"ultrafast", "superfast", "veryfast", "faster", "fast"}:
+        mapped_preset = "fast"
+    elif p in {"slow", "slower", "veryslow"}:
+        mapped_preset = "quality"
+    else:
+        mapped_preset = "balanced"
+
+    cmd = [
+        sys.executable,
+        "lib/assemble.py",
+        slug,
+        "--width", str(body.width),
+        "--height", str(body.height),
+        "--preset", mapped_preset,
+    ]
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(WORKSPACE),
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(500, "Full export render timed out")
+
+    if result.returncode != 0:
+        raise HTTPException(500, f"Full export failed: {result.stderr[-2000:]}")
+
+    # assemble writes {slug}-export.mp4 when non-default params used
+    out_path = exports_dir / f"{slug}-export.mp4"
+    url = f"/projects/{slug}/exports/{out_path.name}"
+    await sse_notify(slug, "render-complete")
+    return {
+        "ok": True,
+        "message": "Full video exported",
+        "url": url,
+        "path": str(out_path),
+        "width": body.width,
+        "height": body.height,
+        "crf": body.crf,
+        "preset": body.preset,
+    }
 
 
 @app.get("/api/project/{slug}/storyboard/{scene_id}/timeline")
@@ -336,6 +396,13 @@ async def update_scene_timeline(slug: str, scene_id: int, body: dict):
 
 class RenderSceneRequest(BaseModel):
     quality: str = "draft"  # "draft" or "high"
+
+
+class ExportParams(BaseModel):
+    width: int = 1920
+    height: int = 1080
+    crf: int = 23
+    preset: str = "medium"
 
 
 @app.post("/api/project/{slug}/storyboard/{scene_id}/render-scene")
@@ -576,6 +643,172 @@ async def list_exports(slug: str):
     # Sort newest first
     out.sort(key=lambda x: x["mtime"], reverse=True)
     return {"exports": out}
+
+
+# ---------------------------------------------------------------------------
+# Export presets (per-project)
+# ---------------------------------------------------------------------------
+# GET returns defaults, or custom from projects/{slug}/export-presets.json
+# merged in for any missing keys. PUT accepts override presets (partial ok
+# at the top level), validates shape/values, saves only the provided custom
+# dict, and returns the full merged result.
+
+DEFAULT_EXPORT_PRESETS = {
+    "4k_landscape": {"width": 3840, "height": 2160, "crf": 18, "preset": "slow"},
+    "1080p_landscape": {"width": 1920, "height": 1080, "crf": 23, "preset": "medium"},
+    "720p_landscape": {"width": 1280, "height": 720, "crf": 28, "preset": "fast"},
+    "1080p_portrait": {"width": 1080, "height": 1920, "crf": 23, "preset": "medium"},
+    "1080p_square": {"width": 1080, "height": 1080, "crf": 23, "preset": "medium"}
+}
+
+
+def _export_presets_path(slug: str) -> Path:
+    return PROJECTS / slug / "export-presets.json"
+
+
+@app.get("/api/project/{slug}/export-presets")
+async def get_export_presets(slug: str):
+    """Return merged export presets for the project as an array for the Export tab dropdown."""
+    slug = slug.strip()
+    project_dir(slug)  # validate
+    p = _export_presets_path(slug)
+    if p.exists():
+        try:
+            custom = json.loads(p.read_text())
+        except (json.JSONDecodeError, OSError):
+            custom = {}
+    else:
+        custom = {}
+    merged = dict(DEFAULT_EXPORT_PRESETS)
+    if isinstance(custom, dict):
+        for k, v in custom.items():
+            if isinstance(v, dict) and all(k2 in v for k2 in ("width", "height", "crf", "preset")):
+                merged[k] = v
+    # Convert to array format for the frontend dropdown
+    label_map = {
+        "4k_landscape": "4K Landscape (3840×2160)",
+        "1080p_landscape": "1080p Landscape (1920×1080)",
+        "720p_landscape": "720p Landscape (1280×720)",
+        "1080p_portrait": "1080p Portrait (1080×1920)",
+        "1080p_square": "1080p Square (1080×1080)",
+    }
+    presets = []
+    for key, cfg in merged.items():
+        presets.append({
+            "label": label_map.get(key, key),
+            "width": cfg["width"],
+            "height": cfg["height"],
+            "crf": cfg["crf"],
+            "preset": cfg["preset"],
+        })
+    presets.append({"label": "Custom", "custom": True})
+    return {"presets": presets}
+
+
+@app.put("/api/project/{slug}/export-presets")
+async def put_export_presets(slug: str, body: dict):
+    """Persist custom presets overrides (validated), return full merged presets."""
+    slug = slug.strip()
+    pd = project_dir(slug)  # validate
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Body must be a dict of preset overrides")
+    allowed = {"ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"}
+    for name, cfg in body.items():
+        if not isinstance(cfg, dict):
+            raise HTTPException(400, f"Preset '{name}' must be an object")
+        for key in ("width", "height", "crf", "preset"):
+            if key not in cfg:
+                raise HTTPException(400, f"Preset '{name}' missing required key '{key}'")
+        w, h, crf, pr = cfg["width"], cfg["height"], cfg["crf"], cfg["preset"]
+        if not isinstance(w, int) or w <= 0:
+            raise HTTPException(400, f"Preset '{name}' width must be positive int")
+        if not isinstance(h, int) or h <= 0:
+            raise HTTPException(400, f"Preset '{name}' height must be positive int")
+        if not isinstance(crf, int) or not (0 <= crf <= 51):
+            raise HTTPException(400, f"Preset '{name}' crf must be int 0-51")
+        if pr not in allowed:
+            raise HTTPException(400, f"Preset '{name}' preset must be one of {sorted(allowed)}")
+    # mkdir so first write succeeds even for brand-new slugs (matches script etc.)
+    pd.mkdir(parents=True, exist_ok=True)
+    p = _export_presets_path(slug)
+    p.write_text(json.dumps(body, indent=2))
+    # build + return merged
+    merged = dict(DEFAULT_EXPORT_PRESETS)
+    for k, v in body.items():
+        if isinstance(v, dict):
+            merged[k] = v
+    return merged
+
+
+# ---------------------------------------------------------------------------
+# Export pipeline endpoints (render-scene-preview + updated /render)
+# Added right before static mounts per spec. The /render update is at top.
+# ---------------------------------------------------------------------------
+
+
+class RenderScenePreviewRequest(BaseModel):
+    scene_id: int
+    width: int = 1920
+    height: int = 1080
+    crf: int = 23
+    preset: str = "medium"
+
+
+@app.post("/api/project/{slug}/render-scene-preview")
+async def render_scene_preview(slug: str, body: RenderScenePreviewRequest):
+    """Render single scene preview with explicit size/crf/preset from Export tab.
+    Maps preset for assemble.py (fast/quality/balanced), calls with --scene --width --height --preset.
+    Returns path/url like the storyboard render-scene endpoint.
+    """
+    slug = slug.strip()
+    project_dir(slug)  # validate
+
+    _, sb = load_storyboard(slug)
+    scene = find_scene(sb, body.scene_id)
+
+    renders_dir = project_dir(slug) / "renders"
+    renders_dir.mkdir(parents=True, exist_ok=True)
+    mp4_path = renders_dir / f"scene-{body.scene_id:02d}.mp4"
+
+    # Map the preset to our assemble.py --preset flag
+    p = (body.preset or "medium").lower()
+    if p in {"ultrafast", "superfast", "veryfast", "faster", "fast"}:
+        mapped_preset = "fast"
+    elif p in {"slow", "slower", "veryslow"}:
+        mapped_preset = "quality"
+    else:
+        mapped_preset = "balanced"
+
+    cmd = [
+        sys.executable,
+        "lib/assemble.py",
+        slug,
+        "--scene", str(body.scene_id),
+        "--width", str(body.width),
+        "--height", str(body.height),
+        "--preset", mapped_preset,
+    ]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(WORKSPACE),
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(500, f"Render timed out for scene {body.scene_id}")
+
+    if result.returncode != 0:
+        raise HTTPException(500, f"Render failed for scene {body.scene_id}: {result.stderr[-2000:]}")
+
+    return {
+        "ok": True,
+        "path": str(mp4_path),
+        "cached": False,
+        "url": f"/projects/{slug}/renders/scene-{body.scene_id:02d}.mp4",
+    }
 
 
 # ---------------------------------------------------------------------------
