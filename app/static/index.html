@@ -9,13 +9,13 @@
    Legacy variant gallery (images[]/current_image/approve/approved) and CSS/JS for it remain for Assets tab only; docs/comments updated to asset_timeline terminology. motion_override and global motion_preset removed. -->
 <style>
   :root {
-    --bg: #0b0f14;
-    --surface: #131820;
+    --bg: #1a1a2e;
+    --surface: #16213e;
     --border: #1e2a38;
     --text: #e0e4ea;
     --text-muted: #6a7a8e;
-    --accent: #c9a03a;
-    --accent-dim: #8a6d28;
+    --accent: #e94560;
+    --accent-dim: #b8304f;
     --green: #4fc35a;
     --red: #e0556a;
     --radius: 8px;
@@ -33,6 +33,45 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  }
+
+  /* Scrollbars (refined for dark theme) */
+  .timeline-main::-webkit-scrollbar,
+  .timeline-props-body::-webkit-scrollbar,
+  .timeline-tracks::-webkit-scrollbar,
+  .storyboard-grid::-webkit-scrollbar,
+  .script-editor::-webkit-scrollbar {
+    width: 8px;
+  }
+  .timeline-main::-webkit-scrollbar-track,
+  .timeline-props-body::-webkit-scrollbar-track,
+  .timeline-tracks::-webkit-scrollbar-track,
+  .storyboard-grid::-webkit-scrollbar-track,
+  .script-editor::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .timeline-main::-webkit-scrollbar-thumb,
+  .timeline-props-body::-webkit-scrollbar-thumb,
+  .timeline-tracks::-webkit-scrollbar-thumb,
+  .storyboard-grid::-webkit-scrollbar-thumb,
+  .script-editor::-webkit-scrollbar-thumb {
+    background: rgba(233,69,96,0.3);
+    border-radius: 4px;
+  }
+  .timeline-main::-webkit-scrollbar-thumb:hover,
+  .timeline-props-body::-webkit-scrollbar-thumb:hover,
+  .timeline-tracks::-webkit-scrollbar-thumb:hover,
+  .storyboard-grid::-webkit-scrollbar-thumb:hover,
+  .script-editor::-webkit-scrollbar-thumb:hover {
+    background: rgba(233,69,96,0.5);
+  }
+  .timeline-main,
+  .timeline-props-body,
+  .timeline-tracks,
+  .storyboard-grid,
+  .script-editor {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(233,69,96,0.3) transparent;
   }
 
   /* ── Header ── */
@@ -102,9 +141,9 @@
     position: relative;
   }
   .pane-header {
-    padding: 10px 16px;
+    padding: 8px 12px;
     border-bottom: 1px solid var(--border);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -115,11 +154,11 @@
   }
   .pane-header .btn {
     font-size: 11px;
-    padding: 4px 10px;
+    padding: 4px 8px;
   }
   .script-editor {
     flex: 1;
-    padding: 20px;
+    padding: 16px;
     background: transparent;
     color: var(--text);
     border: none;
@@ -160,7 +199,7 @@
     overflow: visible;
     display: flex;
     flex-direction: column;
-    transition: border-color 0.2s;
+    transition: all 0.15s ease;
   }
   .scene-card:hover { border-color: var(--accent-dim); }
   .scene-card.approved { border-color: var(--green); }
@@ -219,12 +258,13 @@
     color: var(--text-muted);
     border: 1px solid transparent;
     border-radius: 4px;
-    padding: 3px 10px;
+    padding: 4px 8px;
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     cursor: pointer;
+    transition: all 0.15s ease;
   }
   .tab-btn:hover { color: var(--text); }
   .tab-btn.active {
@@ -243,7 +283,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 14px;
+    padding: 8px 12px;
     border-bottom: 1px solid var(--border);
     background: var(--bg);
   }
@@ -269,7 +309,7 @@
   }
   .prompts-toolbar .btn {
     font-size: 12px;
-    padding: 7px 16px;
+    padding: 8px 12px;
     font-weight: 600;
   }
   /* Reset = tertiary: lowest visual weight */
@@ -308,7 +348,7 @@
   .prompts-editor {
     flex: 1;
     overflow-y: auto;
-    padding: 14px;
+    padding: 12px;
   }
   .prompts-editor .field {
     margin-bottom: 16px;
@@ -334,8 +374,8 @@
     background: var(--bg);
     color: var(--text);
     border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 10px;
+    border-radius: 6px;
+    padding: 8px;
     font-family: var(--font-mono);
     font-size: 12px;
     line-height: 1.5;
@@ -420,7 +460,7 @@
   .export-item-actions {
     margin-top: 8px;
     display: flex;
-    gap: 6px;
+    gap: 8px;
   }
   .export-item-actions .btn {
     font-size: 11px;
@@ -436,7 +476,7 @@
   .spinner {
     display: inline-block;
     width: 16px; height: 16px;
-    border: 2px solid rgba(201,160,58,0.3);
+    border: 2px solid rgba(233,69,96,0.25);
     border-top-color: var(--accent);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
@@ -469,7 +509,7 @@
     background: var(--bg);
     color: var(--text);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 6px;
     padding: 8px;
     font-family: var(--font);
     font-size: 12px;
@@ -481,29 +521,33 @@
 
   .scene-actions {
     display: flex;
-    gap: 6px;
+    gap: 8px;
     align-items: center;
   }
   .btn {
-    background: #1e3040;
+    background: #2a1a3e;
     color: #c0d0e0;
     border: 1px solid #2d4050;
     border-radius: 4px;
-    padding: 6px 14px;
+    padding: 4px 12px;
     font-family: var(--font);
     font-size: 11px;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all 0.15s ease;
     white-space: nowrap;
   }
-  .btn:hover { background: #2d4050; border-color: var(--accent); color: #fff; }
+  .btn:hover { background: #3d2a5e; border-color: var(--accent); color: #fff; }
   .btn.primary { background: var(--accent); color: #0b0f14; font-weight: 600; border-color: var(--accent); }
-  .btn.primary:hover { background: #d4ae4a; }
+  .btn.primary:hover { background: #f06075; }
   .btn.approve { background: #2a5a4a; color: #b0f0d0; border-color: var(--green); }
   .btn.approve:hover { background: var(--green); color: #0b0f14; }
   .btn.danger { background: transparent; color: var(--red); border: 1px solid var(--red); }
   .btn.danger:hover { background: rgba(224,85,106,0.15); }
   .btn:disabled { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
+
+  input, select, textarea {
+    border-radius: 6px;
+  }
 
   .badge {
     font-size: 10px;
@@ -571,13 +615,13 @@
     background: var(--surface);
   }
   .v3-scene-item {
-    padding: 10px 12px;
+    padding: 8px 12px;
     border-bottom: 1px solid var(--border);
     cursor: pointer;
     display: flex;
     align-items: flex-start;
     gap: 8px;
-    transition: background 0.12s;
+    transition: all 0.15s ease;
   }
   .v3-scene-item:hover { background: rgba(201,160,58,0.04); }
   .v3-scene-item.active { background: rgba(201,160,58,0.08); }
@@ -813,7 +857,7 @@
   /* Zoom bar */
   .timeline-zoom-bar {
     display: flex; align-items: center; gap: 8px;
-    padding: 6px 12px; border-bottom: 1px solid var(--border);
+    padding: 4px 8px; border-bottom: 1px solid var(--border);
     background: var(--surface); flex-shrink: 0;
   }
   .timeline-zoom-bar span { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
@@ -839,10 +883,10 @@
     to { transform: rotate(360deg); }
   }
   .preview-video-wrap {
-    display: none; padding: 6px 12px; background: var(--bg); flex-shrink: 0;
+    display: none; padding: 4px 8px; background: var(--bg); flex-shrink: 0;
   }
   .preview-video-wrap video {
-    width: 100%; max-height: 300px; background: #000; display: block;
+    width: 100%; max-height: 200px; background: #000; display: block;
   }
 
   /* Ruler */
@@ -854,7 +898,7 @@
     box-sizing: content-box;
   }
   .timeline-ruler-tick {
-    position: absolute; bottom: 4px; font-size: 9px; color: var(--text-muted);
+    position: absolute; bottom: 4px; font-size: 10px; color: var(--text-muted);
     font-family: var(--font-mono); transform: translateX(-50%);
   }
   .timeline-ruler-mark {
@@ -863,8 +907,12 @@
 
   /* Tracks container */
   .timeline-tracks {
-    flex: 1; overflow-y: auto; position: relative;
+    flex: 1; overflow-y: auto; overflow-x: auto; position: relative;
     background: var(--bg);
+  }
+  .timeline-tracks-inner {
+    position: relative;
+    min-height: 288px; /* 28px ruler + 5*52px tracks */
   }
 
   /* Playhead */
@@ -882,7 +930,7 @@
   }
   .timeline-track-label {
     position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
-    font-size: 10px; color: var(--text-muted); font-family: var(--font-mono);
+    font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);
     width: 44px; text-align: right;
   }
 
@@ -892,24 +940,32 @@
     background: var(--accent-dim); border: 1px solid var(--accent);
     border-radius: 4px; overflow: hidden; cursor: default;
     display: flex; align-items: center; padding: 0 8px;
-    font-size: 10px; color: var(--text); font-family: var(--font-mono);
+    font-size: 11px; color: var(--text); font-family: var(--font-mono);
     white-space: nowrap; text-overflow: ellipsis;
+    transition: all 0.15s ease;
   }
   .timeline-block.approved { border-color: var(--green); background: rgba(79, 195, 90, 0.15); }
 
   /* Bin (filesystem-sourced) */
   .timeline-bin {
-    height: 140px; flex-shrink: 0; border-top: 1px solid var(--border);
-    background: var(--surface); overflow-x: auto; overflow-y: hidden;
+    height: 160px; flex-shrink: 0; border-top: 1px solid var(--border);
+    background: var(--surface); overflow-y: auto; overflow-x: hidden;
     padding: 8px;
+    display: flex; flex-direction: column;
   }
   .timeline-bin-label {
     font-size: 10px; color: var(--text-muted); text-transform: uppercase;
-    letter-spacing: 0.05em; margin-bottom: 6px;
+    letter-spacing: 0.05em; margin-bottom: 4px;
   }
-  .timeline-bin-items { display: flex; gap: 6px; }
+  .timeline-bin-items {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 6px;
+    overflow-y: auto;
+    flex: 1;
+  }
   .timeline-bin-thumb {
-    width: 80px; height: 60px; flex-shrink: 0; border-radius: 4px;
+    width: 100%; aspect-ratio: 4/3; height: auto; flex-shrink: 0; border-radius: 4px;
     background: var(--bg); border: 1px solid var(--border);
     overflow: hidden; display: flex; align-items: center; justify-content: center;
   }
@@ -958,6 +1014,7 @@
     font-size: 14px;
     line-height: 1;
     text-transform: none;
+    transition: all 0.15s ease;
   }
 
   .pane-script.pane-minimized {
@@ -991,6 +1048,7 @@
     flex-direction: column;
     overflow: hidden;
     min-width: 0;
+    min-height: 0;
   }
   .timeline-props-resizer {
     width: 5px;
@@ -1003,30 +1061,60 @@
     background: rgba(201, 160, 58, 0.3);
   }
   .timeline-props {
-    width: 300px;
+    width: 280px;
+    max-width: 320px;
     flex-shrink: 0;
     border-left: 1px solid var(--border);
     background: var(--surface);
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow-y: auto;
     font-size: 12px;
   }
   .timeline-props-header {
-    padding: 6px 10px;
+    padding: 4px 8px;
     border-bottom: 1px solid var(--border);
     font-size: 11px;
     font-weight: 600;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     flex-shrink: 0;
     background: var(--bg);
   }
   .timeline-props-body {
     flex: 1;
     overflow-y: auto;
-    padding: 10px;
+    padding: 8px;
+  }
+  .timeline-props.collapsed {
+    width: 32px !important;
+    min-width: 32px;
+    max-width: 32px;
+    overflow: hidden;
+  }
+  .timeline-props.collapsed .timeline-props-body { display: none; }
+  .timeline-props.collapsed .timeline-props-header span { display: none; }
+  .timeline-props-toggle {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    line-height: 1;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .timeline-props-toggle:hover {
+    color: var(--text);
+    border-color: var(--accent);
+    background: rgba(233,69,96,0.1);
   }
   .timeline-props .field {
     margin-bottom: 8px;
@@ -1043,7 +1131,7 @@
     background: var(--bg);
     color: var(--text);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 6px;
     padding: 4px 6px;
     font-size: 11px;
   }
@@ -1085,11 +1173,12 @@
     display: flex;
     align-items: center;
     padding: 0 8px;
-    font-size: 10px;
+    font-size: 11px;
     color: var(--text);
     font-family: var(--font-mono);
     white-space: nowrap;
     text-overflow: ellipsis;
+    transition: all 0.15s ease;
   }
   .timeline-block.approved {
     border-color: var(--green);
@@ -1149,7 +1238,7 @@
     background: #3d1a1a;
     border-bottom: 2px solid var(--red);
     color: var(--red);
-    padding: 6px 12px;
+    padding: 8px 12px;
     font-size: 12px;
     display: flex;
     align-items: center;
@@ -1173,11 +1262,11 @@
   #v3-tab-export.hidden { display: none; }
 
   .export-controls {
-    padding: 12px 14px;
+    padding: 12px 12px;
     font-size: 12px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
   }
   .export-row {
     display: flex;
@@ -1195,7 +1284,7 @@
     background: var(--bg);
     color: var(--text);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 6px;
     padding: 4px 6px;
     font-size: 12px;
     font-family: var(--font);
@@ -1244,6 +1333,41 @@
     text-decoration: none;
   }
   #export-result a:hover { text-decoration: underline; }
+
+  /* ── Responsive breakpoints for dashboard panes ── */
+  @media (max-width: 1280px) {
+    .pane-script { width: 260px; }
+    .pane-tools { width: 260px; max-width: 260px; min-width: 160px; }
+  }
+  @media (max-width: 1024px) {
+    .pane-tools {
+      width: 32px !important;
+      min-width: 32px !important;
+      max-width: 32px !important;
+      flex: none !important;
+      overflow: hidden;
+    }
+    .pane-tools .tools-tabs,
+    .pane-tools .tools-content,
+    .pane-tools .exports-toolbar,
+    .pane-tools .prompts-toolbar {
+      display: none !important;
+    }
+  }
+  @media (max-width: 900px) {
+    .pane-script {
+      width: 32px !important;
+      min-width: 32px !important;
+      max-width: 32px !important;
+      flex: none !important;
+      overflow: hidden;
+    }
+    .pane-script .pane-resize-handle,
+    .pane-script .script-editor,
+    .pane-script #save-script-btn {
+      display: none !important;
+    }
+  }
 </style>
 </head>
 <body>
@@ -2761,6 +2885,7 @@ function buildTimelinePropsHtml() {
     return '' +
       '<div class="timeline-props">' +
         '<div class="timeline-props-header">' +
+          '<button class="timeline-props-toggle" data-action="toggle-props-collapse" title="Toggle properties">≡</button>' +
           '<span>Properties</span>' +
           '<span class="save-status" style="margin-left:auto;font-size:10px;color:var(--text-muted)"></span>' +
         '</div>' +
@@ -2784,6 +2909,7 @@ function buildTimelinePropsHtml() {
   let html = '' +
     '<div class="timeline-props" data-ai="' + ai + '">' +
       '<div class="timeline-props-header">' +
+        '<button class="timeline-props-toggle" data-action="toggle-props-collapse" title="Toggle properties">≡</button>' +
         '<span>Asset ' + ai + ' <span style="color:var(--accent);font-size:10px;">[' + typeLabel + ']</span> — ' + escHtml(pathLabel) + '</span>' +
         '<span class="save-status" style="margin-left:auto;font-size:10px;color:var(--text-muted)"></span>' +
         '<button class="btn btn-icon" data-action="close-props" title="Close">✕</button>' +
@@ -3223,7 +3349,7 @@ function renderV3Timeline() {
       '</span>' +
     '</div>' +
     '<div class="preview-video-wrap" id="preview-video-wrap">' +
-      '<video id="preview-video" controls style="width:100%;max-height:300px;background:#000"></video>' +
+      '<video id="preview-video" controls style="width:100%;max-height:200px;background:#000"></video>' +
     '</div>';
 
   // Build ruler ticks (inside scroll area now, pad shifts alignment)
