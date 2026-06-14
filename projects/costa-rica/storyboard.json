@@ -8,19 +8,133 @@
       "asset_timeline": [
         {
           "type": "still",
-          "layer": 0,
+          "layer": 1,
           "path": "scenes/scene-01-v2.jpg",
           "seed": null,
           "duration_secs": 27.552,
-          "motion_preset": "drift_left",
+          "motion_preset": "tilt-down",
           "caption_phrases": [
             {
               "text": "The change came first.",
               "time_in": 1.5,
-              "time_out": 4.5,
+              "time_out": 5.5,
               "role": "display"
             }
-          ]
+          ],
+          "time_in": 0,
+          "blend_mode": "normal",
+          "opacity": 1
+        },
+        {
+          "type": "still",
+          "path": "scenes/scene-01-v2-v1.jpg",
+          "duration_secs": 5,
+          "layer": 0,
+          "caption_phrases": [],
+          "time_in": 0,
+          "blend_mode": "normal",
+          "opacity": 1
+        },
+        {
+          "type": "still",
+          "path": "scenes/CimpaiiDemo.png",
+          "duration_secs": 5,
+          "layer": 0,
+          "caption_phrases": [],
+          "time_in": 0,
+          "blend_mode": "normal",
+          "opacity": 1,
+          "motion_preset": "ken-burns"
+        },
+        {
+          "type": "still",
+          "path": "scenes/scene-01-v3-v1.jpg",
+          "duration_secs": 5,
+          "layer": 0,
+          "caption_phrases": [],
+          "prompt": "Wide aerial view of the Costa Rica Pacific coastline at golden hour...",
+          "time_in": 0,
+          "blend_mode": "normal",
+          "opacity": 1
+        },
+        {
+          "type": "still",
+          "path": "scenes/gen-1781423221.jpg",
+          "layer": 0,
+          "caption_phrases": [],
+          "prompt": "Wide aerial view of the Costa Rica Pacific coastline at golden hour, just before the sun meets the horizon. The Pacific Ocean in the foreground, a thin band of mist over a dense tropical canopy, distant blue mountains on the right. No people, no boats, no structures visible. The whole frame is one held breath \u2014 the world opening.",
+          "time_in": 0,
+          "duration_secs": 5,
+          "blend_mode": "normal",
+          "opacity": 1
+        },
+        {
+          "type": "still",
+          "path": "scenes/gen-1781423380.jpg",
+          "layer": 0,
+          "caption_phrases": [],
+          "prompt": "Wide aerial view of the Costa Rica Pacific coastline at golden hour, just before the sun meets the horizon. The Pacific Ocean in the foreground, a thin band of mist over a dense tropical canopy, distant blue mountains on the right. No people, no boats, no structures visible. The whole frame is one held breath \u2014 the world opening.",
+          "time_in": 0,
+          "duration_secs": 5,
+          "blend_mode": "normal",
+          "opacity": 1
+        },
+        {
+          "type": "still",
+          "path": "scenes/Screenshot From 2026-05-02 04-12-59.png",
+          "duration_secs": 5,
+          "layer": 0,
+          "caption_phrases": [],
+          "time_in": 0,
+          "blend_mode": "normal",
+          "opacity": 1
+        },
+        {
+          "type": "video",
+          "path": "scenes/Screencast From 2026-04-23 01-49-45.mp4",
+          "duration_secs": 5,
+          "aspect_ratio": "16:9",
+          "layer": 0,
+          "approved": false,
+          "caption_phrases": [],
+          "time_in": 0,
+          "blend_mode": "normal",
+          "opacity": 1
+        },
+        {
+          "type": "still",
+          "path": "scenes/gen-1781423672.jpg",
+          "layer": 0,
+          "caption_phrases": [],
+          "prompt": "Wide aerial view of the Costa Rica Pacific coastline at golden hour, just before the sun meets the horizon. The Pacific Ocean in the foreground, a thin band of mist over a dense tropical canopy, distant blue mountains on the right. No people, no boats, no structures visible. The whole frame is one held breath \u2014 the world opening."
+        },
+        {
+          "type": "still",
+          "path": "scenes/gen-1781423711.jpg",
+          "layer": 0,
+          "caption_phrases": [],
+          "prompt": "Wide aerial view of the Costa Rica Pacific coastline at golden hour, just before the sun meets the horizon. The Pacific Ocean in the foreground, a thin band of mist over a dense tropical canopy, distant blue mountains on the right. No people, no boats, no structures visible. The whole frame is one held breath \u2014 the world opening."
+        },
+        {
+          "type": "still",
+          "path": "scenes/gen-1781423951.jpg",
+          "layer": 0,
+          "caption_phrases": [],
+          "prompt": "Wide aerial view of the Costa Rica Pacific coastline at golden hour, just before the sun meets the horizon. The Pacific Ocean in the foreground, a thin band of mist over a dense tropical canopy, distant blue mountains on the right. No people, no boats, no structures visible. The whole frame is one held breath \u2014 the world opening."
+        },
+        {
+          "type": "still",
+          "path": "scenes/gen-1781423988.jpg",
+          "layer": 0,
+          "caption_phrases": [],
+          "prompt": "un ave en primer plano"
+        },
+        {
+          "type": "still",
+          "path": "scenes/gen-1781424009.jpg",
+          "layer": 0,
+          "caption_phrases": [],
+          "prompt": "ave sobrevuela"
         }
       ],
       "caption_phrases": [
