@@ -817,87 +817,172 @@
 
   .images-toolbar {
     display: flex; align-items: center; gap: 12px;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
+    padding: 8px 12px;
     flex-shrink: 0;
+    background: var(--surface);
+    border-radius: var(--radius);
+    margin: 0 0 4px;
   }
   .images-count { font-size: 13px; color: var(--text-muted); }
   .images-status { font-size: 12px; color: var(--accent); margin-left: auto; }
-  .images-prompt-area {
-    padding: 12px 14px; border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }
   .images-prompt-label {
-    display: block; font-size: 12px; text-transform: uppercase;
-    letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 4px;
+    display: block; font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 4px;
   }
   .images-prompt {
     width: 100%; background: var(--bg); color: var(--text);
     border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 8px 10px; font-family: var(--font); font-size: 14px;
-    resize: vertical; line-height: 1.5;
+    padding: 6px 8px; font-family: var(--font); font-size: 13px;
+    resize: vertical; line-height: 1.35; min-height: 36px;
   }
   .images-prompt:focus { outline: none; border-color: var(--accent); }
-  .images-actions {
-    display: flex; align-items: center; gap: 8px;
-    padding: 10px 14px; border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-  .images-upload-btn {
-    background: var(--surface); color: var(--text-muted);
-    border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 6px 10px; cursor: pointer; font-size: 13px;
-    display: flex; align-items: center; gap: 4px;
-    transition: all 0.2s; flex-shrink: 0;
-  }
-  .images-upload-btn:hover { border-color: var(--accent); color: var(--text); }
-  .images-upload-btn .icon { font-size: 16px; }
   .images-gallery {
-    display: flex; gap: 8px; padding: 14px;
-    overflow-x: auto; flex-shrink: 0; min-height: 100px;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px; padding: 8px 12px;
+    flex-shrink: 0; min-height: 80px;
   }
   .images-thumb {
-    width: 150px; flex-shrink: 0; cursor: pointer;
-    border: 2px solid transparent; border-radius: 8px;
-    overflow: hidden; transition: border-color 0.2s, transform 0.2s;
-    background: var(--surface); position: relative;
+    display: flex; flex-direction: column;
+    background: var(--surface); border-radius: var(--radius);
+    border: 2px solid transparent; overflow: hidden;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+    cursor: pointer; transition: transform 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
   }
-  .images-thumb:hover { border-color: var(--accent-dim); transform: scale(1.02); }
-  .images-thumb.selected { border-color: var(--accent); }
-  .images-thumb img { width: 100%; height: 100px; object-fit: cover; display: block; }
-  .images-thumb-label {
-    padding: 5px 8px; font-size: 11px; color: var(--text-muted);
-    text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  .images-thumb:hover { transform: scale(1.02); border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .images-thumb.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .images-thumb.selected .thumb-image-wrap::after {
+    content: ''; position: absolute; inset: 0; background: rgba(233,69,96,0.08); pointer-events: none;
   }
-  .images-thumb .badge.approved-badge {
-    position: absolute; top: 4px; right: 4px;
-    background: var(--green); color: #0b0f14;
-    font-size: 9px; padding: 1px 5px; border-radius: 8px; font-weight: 700;
+  .thumb-image-wrap {
+    position: relative; width: 100%; aspect-ratio: 16 / 9;
+    background: #000; overflow: hidden; flex-shrink: 0;
   }
-  .images-thumb .badge.dim-badge {
+  .thumb-image-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb-image-wrap .dim-badge {
     position: absolute; bottom: 4px; left: 4px;
     background: rgba(0,0,0,0.7); color: var(--text-muted);
-    font-size: 8px; padding: 1px 4px; border-radius: 4px;
+    font-size: 9px; padding: 1px 5px; border-radius: 3px; font-family: var(--font-mono);
+    pointer-events: none;
   }
-  .images-thumb .prompt-indicator {
-    position: absolute; top: 4px; left: 4px; font-size: 10px; line-height: 1;
+  .thumb-image-wrap .prompt-indicator {
+    position: absolute; top: 4px; right: 4px; font-size: 11px; line-height: 1;
     background: rgba(0,0,0,0.65); color: #fff; padding: 1px 3px; border-radius: 3px;
     pointer-events: none;
   }
+  .thumb-image-wrap .approved-badge {
+    position: absolute; top: 4px; left: 4px;
+    background: var(--green); color: #0b0f14;
+    font-size: 9px; padding: 0 4px; border-radius: 3px; font-weight: 700;
+  }
+  .thumb-label-row {
+    display: flex; align-items: center; gap: 4px;
+    padding: 4px 6px; font-size: 10px; background: rgba(0,0,0,0.15);
+    flex-shrink: 0; border-top: 1px solid var(--border);
+  }
+  .thumb-filename {
+    flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-family: var(--font-mono); color: var(--text-muted);
+  }
+  .thumb-remove {
+    background: transparent; border: none; color: var(--text-muted);
+    font-size: 12px; line-height: 1; padding: 1px 4px; cursor: pointer;
+    border-radius: 3px; transition: color 120ms ease, background 120ms ease;
+  }
+  .thumb-remove:hover { color: var(--red); background: rgba(180,40,50,0.15); }
   .video-clip-card .prompt-indicator {
     position: absolute; top: 2px; right: 2px; font-size: 9px; line-height: 1;
     background: rgba(0,0,0,0.65); color: #fff; padding: 0 2px; border-radius: 2px;
     pointer-events: none;
   }
   .images-preview {
-    flex: 1; display: flex; flex-direction: column; align-items: center;
-    justify-content: center; padding: 14px;
-    background: #000; min-height: 200px; overflow: hidden;
+    display: flex; flex-direction: column; width: 100%;
+    background: var(--surface); border-radius: var(--radius);
+    overflow: hidden; flex-shrink: 0;
   }
-  .images-preview img { max-width: 100%; max-height: 300px; object-fit: contain; }
-  .images-preview-info { font-size: 11px; color: var(--text-muted); margin-top: 8px; }
-  #v3-tab-images { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+  .preview-image-container {
+    position: relative; width: 100%; max-height: 300px;
+    background: #000; display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  .preview-image-container img#images-preview-img {
+    max-width: 100%; max-height: 300px; object-fit: contain; display: block;
+  }
+  .preview-overlay {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.45); opacity: 0; transition: opacity 200ms ease;
+    pointer-events: none;
+  }
+  .preview-image-container:hover .preview-overlay { opacity: 1; pointer-events: auto; }
+  .preview-fs-btn {
+    font-size: 12px; padding: 6px 12px; border-radius: 6px;
+    background: var(--accent); color: #fff; border: none; cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3); transition: transform 120ms ease;
+  }
+  .preview-fs-btn:hover { transform: translateY(-1px); }
+  .images-preview-info {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    padding: 6px 10px; font-size: 11px; color: var(--text-muted);
+    background: var(--bg); border-top: 1px solid var(--border);
+    font-family: var(--font);
+  }
+  .images-preview-info .info-filename,
+  .images-preview-info .info-dims,
+  .images-preview-info .info-prompt { font-family: var(--font-mono); }
+  .images-preview-info .info-prompt { color: var(--text-muted); font-style: italic; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #v3-tab-images { display: flex; flex-direction: column; overflow-y: auto; padding: 8px 0; gap: 10px; }
   #v3-tab-images.hidden { display: none; }
+
+  /* Prompt + Generate compact bar */
+  .images-prompt-bar {
+    flex-shrink: 0; background: var(--surface); border-radius: var(--radius);
+    padding: 8px 12px; position: sticky; top: 0; z-index: 5;
+  }
+  .prompt-input-row {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .prompt-input-row .images-prompt { flex: 1; margin: 0; resize: none; }
+  .prompt-input-row .btn { flex-shrink: 0; padding: 6px 14px; font-size: 13px; }
+  .prompt-input-row .btn.danger { padding: 6px 8px; font-size: 11px; background: transparent; border-color: var(--border); color: var(--text-muted); }
+  .prompt-input-row .btn.danger:hover:not(:disabled) { background: var(--red); border-color: var(--red); color: #fff; }
+
+  /* Collapsed upload bar + zone */
+  .images-upload-collapsed {
+    flex-shrink: 0; padding: 6px 12px; font-size: 12px; color: var(--text-muted);
+    border: 1px dashed var(--border); border-radius: var(--radius);
+    cursor: pointer; transition: border-color 200ms ease, color 200ms ease, background 200ms ease;
+    text-align: center;
+  }
+  .images-upload-collapsed:hover { border-color: var(--accent); color: var(--text); }
+  .images-upload-zone {
+    flex-shrink: 0; padding: 10px 12px; cursor: pointer;
+  }
+  .images-upload-zone .images-upload-inner {
+    border: 2px dashed var(--border); border-radius: var(--radius);
+    padding: 14px; text-align: center; color: var(--text-muted); font-size: 13px;
+    transition: border-color 200ms ease, background 200ms ease;
+    position: relative;
+  }
+  .images-upload-zone.drag-over .images-upload-inner,
+  .images-upload-inner:hover { border-color: var(--accent); color: var(--text); background: rgba(233,69,96,0.04); }
+  .images-upload-icon { display: block; font-size: 20px; margin-bottom: 4px; }
+  .images-upload-zone .upload-collapse {
+    position: absolute; top: 4px; right: 6px; background: var(--bg); color: var(--text-muted);
+    border: 1px solid var(--border); border-radius: 3px; font-size: 11px; line-height: 1;
+    padding: 1px 5px; cursor: pointer;
+  }
+  .images-upload-zone .upload-collapse:hover { color: var(--text); border-color: var(--accent); }
+
+  /* Empty state in gallery */
+  .images-empty {
+    grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 28px 12px; text-align: center; color: var(--text-muted); min-height: 160px;
+    border: 1px dashed var(--border); border-radius: var(--radius); background: var(--surface);
+  }
+  .images-empty .empty-icon { font-size: 42px; margin-bottom: 8px; opacity: 0.85; }
+  .images-empty .empty-title { font-size: 15px; color: var(--text); margin-bottom: 4px; }
+  .images-empty .empty-sub { font-size: 12px; margin-bottom: 12px; }
+  .images-empty .empty-actions { display: flex; gap: 10px; }
+  .images-empty .btn { padding: 6px 12px; font-size: 13px; }
 
   /* Keep old #v3-tab-assets CSS for backward compat but add hidden support */
   #v3-tab-assets { display: none !important; }
@@ -1817,6 +1902,8 @@ function connectSSE() {
         break;
       case 'image_ready':
       case 'image-added':
+      case 'still-registered':
+      case 'video-registered':
         if (Number.isFinite(sceneId)) {
           state.generating.delete(sceneId);
           state.lastGenReady = sceneId;
@@ -1955,13 +2042,18 @@ async function generateVersion(id) {
   state.generating.add(id);
   if (state.scenes[state.v3Index]?.id === id) renderV3Assets();
   else renderStoryboard();
+  const statusEl = $('images-status');
+  if (statusEl) { statusEl.style.display = 'inline'; statusEl.innerHTML = '<span class="spinner"></span> Requesting generation…'; }
   setRenderMsg(`Generating scene ${id}…`);
   try {
     await api(`/api/project/${encodeURIComponent(state.slug)}/storyboard/${id}/image`, { method: 'POST' });
+    if (statusEl) { statusEl.innerHTML = '<span class="spinner"></span> Waiting for agent to pick up…'; }
+    setRenderMsg(`Scene ${id}: request sent — waiting for agent to process`);
   } catch (err) {
     state.generating.delete(id);
     if (state.scenes[state.v3Index]?.id === id) renderV3Assets();
     else renderStoryboard();
+    if (statusEl) { statusEl.style.display = 'inline'; statusEl.innerHTML = '⚠ ' + (err.message || 'Generation failed'); }
     setRenderMsg(`Scene ${id}: ${err.message}`, true);
   }
 }
@@ -2515,19 +2607,57 @@ function renderV3Assets() {
     promptEl.value = scene.visual_direction || '';
   }
 
-  // Generate button
+  // Generate button (use emoji per redesign)
   if (generating) {
     genBtn.innerHTML = '<span class="spinner"></span> Generating…';
     genBtn.disabled = true;
   } else {
-    genBtn.textContent = '+ Generate Image';
+    genBtn.innerHTML = '✨ Generate';
     genBtn.disabled = false;
   }
-  unapproveBtn.disabled = !hasApproved;
+  if (unapproveBtn) unapproveBtn.disabled = !hasApproved;
 
-  // Gallery
+  // Upload collapse default + supplemental wiring (for zone when expanded; wiring compat for dummy btn)
+  const collapsedBar = $('images-upload-collapsed');
+  if (collapsedBar && uploadZone) {
+    collapsedBar.style.display = 'block';
+    uploadZone.style.display = 'none';
+    if (!collapsedBar.dataset.wired) {
+      collapsedBar.dataset.wired = '1';
+      collapsedBar.addEventListener('click', () => {
+        collapsedBar.style.display = 'none';
+        uploadZone.style.display = 'block';
+      });
+    }
+  }
+  if (uploadZone) {
+    const uploadInput = $('images-upload-input');
+    if (uploadInput && !uploadZone.dataset.fullyWired) {
+      uploadZone.dataset.fullyWired = '1';
+      uploadZone.addEventListener('click', (e) => {
+        if (e.target.closest('.upload-collapse')) return;
+        uploadInput.click();
+      });
+      uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+      uploadZone.addEventListener('dragleave', () => { uploadZone.classList.remove('drag-over'); });
+      uploadZone.addEventListener('drop', async (e) => {
+        e.preventDefault(); uploadZone.classList.remove('drag-over');
+        if (e.dataTransfer && e.dataTransfer.files.length) await handleImageUpload(e.dataTransfer.files[0]);
+      });
+    }
+  }
+
+  // Gallery / empty
   if (!versions.length) {
-    gallery.innerHTML = '<div class="empty">No images yet. Drop an image above or generate one.</div>';
+    gallery.innerHTML = '<div class="images-empty">' +
+      '<div class="empty-icon">🖼️</div>' +
+      '<div class="empty-title">No images yet</div>' +
+      '<div class="empty-sub">Generate your first image or upload one</div>' +
+      '<div class="empty-actions">' +
+        '<button class="btn primary" onclick="document.getElementById(\'images-gen-btn\').click();return false;">✨ Generate</button>' +
+        '<button class="btn" onclick="document.getElementById(\'images-upload-input\').click();return false;">📁 Upload</button>' +
+      '</div>' +
+      '</div>';
     preview.style.display = 'none';
   } else {
     renderV3AssetsGallery(scene);
@@ -2539,29 +2669,65 @@ function renderV3Assets() {
 function renderV3AssetsGallery(scene) {
   const gallery = $('images-gallery');
   const versions = (scene.asset_timeline || []).filter(a => a.type === 'still' && a.path);
+  const selIdx = Math.min(_selectedImageIndex || 0, versions.length ? versions.length - 1 : 0);
 
   gallery.innerHTML = versions.map((v, i) => {
-    const selected = v.approved ? ' selected' : '';
-    const approvedBadge = v.approved ? '<span class="badge approved-badge">Approved</span>' : '';
+    const isSelected = (i === selIdx) ? ' selected' : '';
+    const approvedBadge = v.approved ? '<span class="approved-badge">✓</span>' : '';
     const filename = v.path.split('/').pop();
-    const dims = v.width && v.height ? `${v.width}×${v.height}` : 'Still';
+    const ext = filename.split('.').pop().toUpperCase();
+    const dims = v.width && v.height ? `${v.width}×${v.height}` : '';
+    const dimText = dims ? (dims + ' · ' + ext) : ext;
     const promptInd = v.prompt ? '<span class="prompt-indicator" title="Has saved prompt">📋</span>' : '';
-    return '<div class="images-thumb' + selected + '" data-variant-index="' + i + '">' +
-      promptInd +
-      '<img src="' + escHtml(imageUrl(v.path)) + '" alt="' + escHtml(filename) + '" loading="lazy">' +
-      approvedBadge +
-      '<span class="badge dim-badge">' + escHtml(dims) + '</span>' +
-      '<div class="images-thumb-label" title="' + escHtml(filename) + '">' + escHtml(filename) + '</div>' +
+    return '<div class="images-thumb' + isSelected + '" data-variant-index="' + i + '">' +
+      '<div class="thumb-image-wrap">' +
+        promptInd +
+        '<img src="' + escHtml(imageUrl(v.path)) + '" alt="' + escHtml(filename) + '" loading="lazy">' +
+        approvedBadge +
+        '<span class="dim-badge">' + escHtml(dimText) + '</span>' +
+      '</div>' +
+      '<div class="thumb-label-row">' +
+        '<span class="thumb-filename" title="' + escHtml(filename) + '">' + escHtml(filename) + '</span>' +
+        '<button class="thumb-remove" title="Remove image" data-idx="' + i + '">×</button>' +
+      '</div>' +
       '</div>';
   }).join('');
 
-  // Wire thumbnail clicks to update preview
+  // Wire thumbnail clicks (preview select + highlight; delegation also does approve/nav)
   gallery.querySelectorAll('.images-thumb').forEach(function(thumb, i) {
     thumb.addEventListener('click', function() {
       _selectedImageIndex = i;
       renderV3AssetsPreview(scene);
       gallery.querySelectorAll('.images-thumb').forEach(function(t) { t.classList.remove('selected'); });
       thumb.classList.add('selected');
+    });
+  });
+
+  // Wire × remove buttons (stop prop to avoid approve; remove from asset_timeline via PUT then reload)
+  gallery.querySelectorAll('.thumb-remove').forEach(function(btn) {
+    btn.addEventListener('click', async function(ev) {
+      ev.stopPropagation();
+      const scene2 = state.scenes[state.v3Index];
+      if (!scene2) return;
+      const idx = Number(btn.dataset.idx);
+      const versions2 = (scene2.asset_timeline || []).filter(a => a.type === 'still' && a.path);
+      const toRemove = versions2[idx];
+      if (!toRemove) return;
+      const tl = JSON.parse(JSON.stringify(scene2.asset_timeline || []));
+      const rmIdx = tl.findIndex(a => a.type === 'still' && a.path === toRemove.path);
+      if (rmIdx < 0) return;
+      tl.splice(rmIdx, 1);
+      try {
+        if (idx === _selectedImageIndex) _selectedImageIndex = 0;
+        await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene2.id + '/timeline', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ asset_timeline: tl })
+        });
+        await loadProject(state.slug);
+      } catch (e) {
+        setRenderMsg('Remove failed: ' + (e.message || e), true);
+      }
     });
   });
 }
@@ -2577,7 +2743,24 @@ function renderV3AssetsPreview(scene) {
     img.src = imageUrl(v.path);
     const filename = v.path.split('/').pop();
     const dims = v.width && v.height ? `${v.width}×${v.height}` : '';
-    info.textContent = [filename, dims].filter(Boolean).join(' — ');
+    const ext = filename.split('.').pop().toUpperCase();
+    let pprev = '';
+    if (v.prompt) {
+      pprev = v.prompt.length > 58 ? v.prompt.slice(0, 55) + '…' : v.prompt;
+    }
+    info.innerHTML =
+      '<span class="info-filename">' + escHtml(filename) + '</span>' +
+      (dims ? ' · <span class="info-dims">' + escHtml(dims) + (ext ? ' · ' + escHtml(ext) : '') + '</span>' : '') +
+      (pprev ? ' · <span class="info-prompt" title="' + escHtml(v.prompt || '') + '">' + escHtml(pprev) + '</span>' : '');
+    // Wire fullscreen overlay button (guard with dataset)
+    const fs = document.querySelector('#images-preview .preview-fs-btn');
+    if (fs && !fs.dataset.wired) {
+      fs.dataset.wired = '1';
+      fs.addEventListener('click', function(e) {
+        e.stopPropagation();
+        if (img && img.src) window.open(img.src, '_blank');
+      });
+    }
   }
 }
 
