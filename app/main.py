@@ -325,8 +325,8 @@ async def request_scene_image(slug: str, scene_id: int, body: dict = None):
 
 def _generate_image_sync(prompt: str, output_dir: str) -> dict:
     """Synchronous wrapper — called from thread pool."""
-    import os, sys
-    sys.path.insert(0, str(Path(os.environ.get('HERMES_HOME', os.path.expanduser('~/.hermes'))) / 'hermes-agent'))
+    import os as _os, sys as _sys
+    _sys.path.insert(0, str(Path(_os.environ.get('HERMES_HOME', _os.path.expanduser('~/.hermes'))) / 'hermes-agent'))
     import importlib.util
     bridge = Path(__file__).resolve().parent.parent / "lib" / "gen_bridge.py"
     spec = importlib.util.spec_from_file_location("gen_bridge", bridge)
@@ -334,6 +334,19 @@ def _generate_image_sync(prompt: str, output_dir: str) -> dict:
     spec.loader.exec_module(mod)
     ok, result = mod.generate_image(prompt, output_dir)
     return {"ok": ok, "image_path" if ok else "error": result}
+
+
+def _generate_video_sync(prompt: str, output_dir: str, ref_paths: list, duration: float, aspect: str, resolution: str) -> dict:
+    """Synchronous video wrapper — called from thread pool."""
+    import os as _os, sys as _sys
+    _sys.path.insert(0, str(Path(_os.environ.get('HERMES_HOME', _os.path.expanduser('~/.hermes'))) / 'hermes-agent'))
+    import importlib.util
+    bridge = Path(__file__).resolve().parent.parent / "lib" / "gen_bridge.py"
+    spec = importlib.util.spec_from_file_location("gen_bridge", bridge)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    ok, result = mod.generate_video(prompt, output_dir, ref_paths, duration, aspect, resolution)
+    return {"ok": ok, "video_path" if ok else "error": result}
 
 
 class VideoGenRequest(BaseModel):
@@ -347,34 +360,56 @@ class VideoGenRequest(BaseModel):
 @app.post("/api/project/{slug}/storyboard/{scene_id}/video")
 async def request_scene_video(slug: str, scene_id: int, body: VideoGenRequest):
     """
-    Enqueue a video generation request. The agent listens on the SSE stream
-    (with full request payload), calls Grok Imagine video, saves to scenes/,
-    and registers via /add-version.
+    Generate a video for this scene using xAI Grok Imagine Video.
+    Runs inline — progress streamed via SSE.
     """
     slug = slug.strip()
-    project_dir(slug)  # validate
+    project_dir(slug)
 
     sb_path, sb = load_storyboard(slug)
     scene = find_scene(sb, scene_id)
 
-    req_payload = {
-        "prompt": body.prompt or "",
-        "reference_image_paths": body.reference_image_paths or [],
+    prompt = body.prompt or scene.get("visual_direction", "")
+    await sse_notify(slug, f"video-generating:{scene_id}")
+
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            _generate_video_sync,
+            prompt,
+            str(project_dir(slug) / "scenes"),
+            body.reference_image_paths,
+            body.duration_secs,
+            body.aspect_ratio,
+            body.resolution,
+        )
+    except Exception as e:
+        await sse_notify(slug, f"video-failed:{scene_id}")
+        raise HTTPException(500, f"Video generation failed: {e}")
+
+    if not result["ok"]:
+        await sse_notify(slug, f"video-failed:{scene_id}")
+        raise HTTPException(500, result.get("error", "Unknown error"))
+
+    vid_path = Path(result["video_path"])
+    rel_path = f"scenes/{vid_path.name}"
+    entry = {
+        "type": "video",
+        "path": rel_path,
+        "layer": 0,
         "duration_secs": body.duration_secs,
         "aspect_ratio": body.aspect_ratio,
-        "resolution": body.resolution,
+        "caption_phrases": [],
+        "prompt": prompt,
     }
-    event_name = f"video-requested:{scene_id}"
-    # Include full request payload as JSON-able data alongside scene_id (agent reads from SSE event data)
-    data = json.dumps({
-        "slug": slug,
-        "event": event_name,
-        "scene_id": scene_id,
-        "request": req_payload
-    })
-    for q in sse_clients:
-        await q.put(data)
-    return {"ok": True, "status": "requested", "provider": "xai-grok-imagine-video"}
+    if not isinstance(scene.get("asset_timeline"), list):
+        scene["asset_timeline"] = []
+    scene["asset_timeline"].append(entry)
+    save_storyboard(sb_path, sb)
+
+    await sse_notify(slug, f"video-registered:{scene_id}")
+    return {"ok": True, "scene": scene_id, "path": rel_path, "status": "generated"}
 
 
 @app.post("/api/project/{slug}/render")

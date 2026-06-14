@@ -1926,10 +1926,30 @@ function connectSSE() {
         if (Number.isFinite(sceneId)) {
           state.generating.delete(sceneId);
           state.lastGenReady = sceneId;
-          setRenderMsg(`Scene ${sceneId}: image ready`);
+          setRenderMsg(`Scene ${sceneId}: video ready`);
           if (state.scenes[state.v3Index]?.id === sceneId) renderV3Assets();
         }
         reloadCurrent(data.slug);
+        break;
+      case 'video-generating':
+        if (Number.isFinite(sceneId)) {
+          state.generating.add(sceneId);
+          setRenderMsg(`Generating video for scene ${sceneId}…`);
+          if (state.scenes[state.v3Index]?.id === sceneId) {
+            const st = $('images-status');
+            if (st) { st.style.display = 'inline'; st.innerHTML = '<span class="spinner"></span> Generating video…'; }
+          }
+        }
+        break;
+      case 'video-failed':
+        if (Number.isFinite(sceneId)) {
+          state.generating.delete(sceneId);
+          setRenderMsg(`Scene ${sceneId}: video generation failed`, true);
+          if (state.scenes[state.v3Index]?.id === sceneId) {
+            const st = $('images-status');
+            if (st) { st.style.display = 'inline'; st.innerHTML = '⚠ Video generation failed'; }
+          }
+        }
         break;
       case 'timeline-updated':
         // Special handling for T6: only refresh local _timelineAssets for current scene if not dirty.

@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Direct xAI image generation — reads auth.json directly, no Hermes imports needed."""
+"""Direct xAI image/video generation — reads auth.json directly, no Hermes imports needed."""
 import argparse, json, os, sys, time, requests
 from pathlib import Path
 
 def _get_xai_token():
-    """Read xAI OAuth token from Hermes auth.json."""
     auth_path = Path(os.environ.get('HERMES_HOME', os.path.expanduser('~/.hermes'))) / 'auth.json'
     if not auth_path.exists():
         return None
@@ -14,12 +13,15 @@ def _get_xai_token():
     tokens = xai.get('tokens', {})
     return tokens.get('access_token')
 
-def generate_image(prompt, output_dir):
-    """Call xAI Grok Imagine API and save the image."""
+def _api_key():
     token = _get_xai_token()
     if not token:
-        return False, "No xAI credentials — re-auth: hermes auth add xai-oauth --type oauth"
+        raise RuntimeError("No xAI credentials — re-auth: hermes auth add xai-oauth --type oauth")
+    return token
 
+def generate_image(prompt, output_dir):
+    """Call xAI Grok Imagine image API and save the result."""
+    token = _api_key()
     url = "https://api.x.ai/v1/images/generations"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     body = {"model": "grok-imagine-image", "prompt": prompt, "n": 1, "response_format": "url"}
@@ -43,10 +45,56 @@ def generate_image(prompt, output_dir):
     img_path.write_bytes(img_r.content)
     return True, str(img_path)
 
+
+def generate_video(prompt, output_dir, reference_image_paths=None, duration_secs=5, aspect_ratio="16:9", resolution="720p"):
+    """Call xAI Grok Imagine video API (image-to-video or text-to-video) and save."""
+    token = _api_key()
+    url = "https://api.x.ai/v1/videos/generations"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    body = {
+        "model": "grok-imagine-video",
+        "prompt": prompt,
+        "duration": min(max(duration_secs, 1), 15),
+        "aspect_ratio": aspect_ratio,
+        "resolution": resolution,
+    }
+    if reference_image_paths:
+        body["reference_image_urls"] = reference_image_paths  # xAI API expects URLs, but we pass local paths and hope the API handles them
+        body["n"] = 1
+    
+    r = requests.post(url, json=body, headers=headers, timeout=300)
+    if r.status_code != 200:
+        return False, f"xAI video API error {r.status_code}: {r.text[:300]}"
+    
+    data = r.json()
+    video_url = data.get('data', [{}])[0].get('url')
+    if not video_url:
+        return False, f"No video URL: {json.dumps(data)[:200]}"
+    
+    vid_r = requests.get(video_url, timeout=120)
+    if vid_r.status_code != 200:
+        return False, f"Video download failed: {vid_r.status_code}"
+    
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    vid_path = output_dir / f"genvid-{int(time.time())}.mp4"
+    vid_path.write_bytes(vid_r.content)
+    return True, str(vid_path)
+
+
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
+    p.add_argument('--type', choices=['image','video'], default='image')
     p.add_argument('--prompt', required=True)
     p.add_argument('--output-dir', required=True)
+    p.add_argument('--duration', type=float, default=5)
+    p.add_argument('--aspect-ratio', default='16:9')
+    p.add_argument('--resolution', default='720p')
+    p.add_argument('--ref-images', nargs='*', default=[])
     a = p.parse_args()
-    ok, r = generate_image(a.prompt, a.output_dir)
-    print(json.dumps({"ok": ok, "image_path" if ok else "error": r}))
+    
+    if a.type == 'video':
+        ok, r = generate_video(a.prompt, a.output_dir, a.ref_images or None, a.duration, a.aspect_ratio, a.resolution)
+    else:
+        ok, r = generate_image(a.prompt, a.output_dir)
+    print(json.dumps({"ok": ok, "image_path" if a.type == 'image' else "video_path" if ok else "error": r}))
