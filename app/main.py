@@ -273,18 +273,18 @@ def _load_design_style(slug: str) -> tuple[str, int]:
 
 
 @app.post("/api/project/{slug}/storyboard/{scene_id}/image")
-async def request_scene_image(slug: str, scene_id: int):
+async def request_scene_image(slug: str, scene_id: int, body: dict = None):
     """
-    Enqueue a "generate image for this scene" request. The agent listens
-    on the SSE stream, calls Grok Imagine via the image_generate tool,
-    saves the image to scenes/, and records it in the scene's asset_timeline.
+    Generate an image for this scene using xAI Grok Imagine.
+    Accepts optional prompt in request body; falls back to scene.visual_direction.
+    Runs inline — progress streamed via SSE.
     """
     slug = slug.strip()
     project_dir(slug)  # validate
 
     sb_path, sb = load_storyboard(slug)
     scene = find_scene(sb, scene_id)
-    prompt = scene.get("visual_direction", "")
+    prompt = (body or {}).get("prompt", "").strip() or scene.get("visual_direction", "")
     await sse_notify(slug, f"image-generating:{scene_id}")
 
     try:

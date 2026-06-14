@@ -2065,7 +2065,13 @@ async function generateVersion(id) {
   if (statusEl) { statusEl.style.display = 'inline'; statusEl.innerHTML = '<span class="spinner"></span> Requesting generation…'; }
   setRenderMsg(`Generating scene ${id}…`);
   try {
-    await api(`/api/project/${encodeURIComponent(state.slug)}/storyboard/${id}/image`, { method: 'POST' });
+    const promptEl = $('images-prompt');
+    const prompt = promptEl ? promptEl.value.trim() : '';
+    await api(`/api/project/${encodeURIComponent(state.slug)}/storyboard/${id}/image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: prompt || undefined }),
+    });
     if (statusEl) { statusEl.innerHTML = '<span class="spinner"></span> Waiting for agent to pick up…'; }
     setRenderMsg(`Scene ${id}: request sent — waiting for agent to process`);
   } catch (err) {
