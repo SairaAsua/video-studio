@@ -797,6 +797,86 @@
   #v3-tab-assets { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
   #v3-tab-assets.hidden { display: none; }
 
+  .images-toolbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .images-count { font-size: 13px; color: var(--text-muted); }
+  .images-status { font-size: 12px; color: var(--accent); margin-left: auto; }
+  .images-prompt-area {
+    padding: 12px 14px; border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .images-prompt-label {
+    display: block; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 6px;
+  }
+  .images-prompt {
+    width: 100%; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 8px 10px; font-family: var(--font); font-size: 13px;
+    resize: vertical; line-height: 1.5;
+  }
+  .images-prompt:focus { outline: none; border-color: var(--accent); }
+  .images-actions {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .images-upload-zone {
+    padding: 16px 14px; border-bottom: 1px solid var(--border);
+    flex-shrink: 0; cursor: pointer;
+  }
+  .images-upload-inner {
+    border: 2px dashed var(--border); border-radius: var(--radius);
+    padding: 20px; text-align: center; color: var(--text-muted);
+    font-size: 13px; transition: border-color 0.2s;
+  }
+  .images-upload-zone.drag-over .images-upload-inner,
+  .images-upload-inner:hover { border-color: var(--accent); color: var(--text); }
+  .images-upload-icon { display: block; font-size: 24px; margin-bottom: 6px; }
+  .images-gallery {
+    display: flex; gap: 8px; padding: 14px;
+    overflow-x: auto; flex-shrink: 0; min-height: 100px;
+  }
+  .images-thumb {
+    width: 120px; flex-shrink: 0; cursor: pointer;
+    border: 2px solid transparent; border-radius: 6px;
+    overflow: hidden; transition: border-color 0.15s;
+    background: var(--surface); position: relative;
+  }
+  .images-thumb:hover { border-color: var(--accent-dim); }
+  .images-thumb.selected { border-color: var(--accent); }
+  .images-thumb img { width: 100%; height: 80px; object-fit: cover; display: block; }
+  .images-thumb-label {
+    padding: 4px 6px; font-size: 10px; color: var(--text-muted);
+    text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .images-thumb .badge.approved-badge {
+    position: absolute; top: 4px; right: 4px;
+    background: var(--green); color: #0b0f14;
+    font-size: 9px; padding: 1px 5px; border-radius: 8px; font-weight: 700;
+  }
+  .images-thumb .badge.dim-badge {
+    position: absolute; bottom: 4px; left: 4px;
+    background: rgba(0,0,0,0.7); color: var(--text-muted);
+    font-size: 8px; padding: 1px 4px; border-radius: 4px;
+  }
+  .images-preview {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; padding: 14px;
+    background: #000; min-height: 200px; overflow: hidden;
+  }
+  .images-preview img { max-width: 100%; max-height: 300px; object-fit: contain; }
+  .images-preview-info { font-size: 11px; color: var(--text-muted); margin-top: 8px; }
+  #v3-tab-images { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+  #v3-tab-images.hidden { display: none; }
+
+  /* Keep old #v3-tab-assets CSS for backward compat but add hidden support */
+  #v3-tab-assets { display: none !important; }
+
   /* ── Captions tab (v1.1.3) ── */
   .captions-editor {
     padding: 14px;
@@ -1456,20 +1536,41 @@
       <div class="v3-workspace-panel" id="v3-workspace-panel">
         <div class="v3-workspace-header" id="v3-workspace-header"></div>
         <div class="v3-tab-bar" id="v3-tab-bar">
-          <button class="tab-btn active" data-v3-tab="assets">Assets</button>
+          <button class="tab-btn active" data-v3-tab="images">IMAGES</button>
           <button class="tab-btn" data-v3-tab="captions">Captions</button>
           <button class="tab-btn" data-v3-tab="timeline">Timeline</button>
         </div>
-        <div class="v3-tab-body" id="v3-tab-assets">
-          <div class="assets-toolbar">
-            <button class="btn" id="assets-gen-btn">+ Gen</button>
-            <button class="btn" id="assets-regen-btn" disabled>&#x1f504; Regenerate with current prompts</button>
-            <button class="btn danger" id="assets-unapprove-btn" disabled>&#x274c; Unapprove</button>
-            <span class="badge" id="assets-status-badge" style="display:none"></span>
+        <div class="v3-tab-body" id="v3-tab-images">
+          <!-- Status bar -->
+          <div class="images-toolbar">
+            <span class="images-count" id="images-count">0 images in scene</span>
+            <span class="images-status" id="images-status" style="display:none"></span>
+            <span class="badge" id="images-approve-badge" style="display:none"></span>
           </div>
-          <div class="assets-gallery" id="assets-gallery"></div>
-          <div class="assets-preview" id="assets-preview" style="display:none">
-            <img id="assets-preview-img">
+          <!-- Prompt box -->
+          <div class="images-prompt-area">
+            <label class="images-prompt-label" for="images-prompt">Visual direction prompt</label>
+            <textarea class="images-prompt" id="images-prompt" rows="3" placeholder="Describe the desired image…"></textarea>
+          </div>
+          <!-- Actions: Generate + Unapprove -->
+          <div class="images-actions">
+            <button class="btn primary" id="images-gen-btn">+ Generate Image</button>
+            <button class="btn danger" id="images-unapprove-btn" disabled>Unapprove</button>
+          </div>
+          <!-- Upload zone -->
+          <div class="images-upload-zone" id="images-upload-zone">
+            <div class="images-upload-inner">
+              <span class="images-upload-icon">📁</span>
+              <span>Drop JPG/PNG/WebP here or click to upload</span>
+              <input type="file" id="images-upload-input" accept=".jpg,.jpeg,.png,.webp" style="display:none">
+            </div>
+          </div>
+          <!-- Gallery -->
+          <div class="images-gallery" id="images-gallery"></div>
+          <!-- Preview -->
+          <div class="images-preview" id="images-preview" style="display:none">
+            <img id="images-preview-img">
+            <div class="images-preview-info" id="images-preview-info"></div>
           </div>
         </div>
         <div class="v3-tab-body hidden" id="v3-tab-captions"></div>
@@ -2157,6 +2258,7 @@ function renderV3Workspace() {
   const activeTab = document.querySelector('#v3-tab-bar .tab-btn.active');
   if (activeTab) {
     const tabName = activeTab.dataset.v3Tab;
+    if (tabName === 'images') renderV3Assets();
     if (tabName === 'captions') renderV3Captions();
     else if (tabName === 'timeline') renderV3Timeline();
   }
@@ -2166,10 +2268,10 @@ function switchV3Tab(name) {
   document.querySelectorAll('#v3-tab-bar [data-v3-tab]').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.v3Tab === name);
   });
-  ['assets', 'captions', 'timeline'].forEach((tab) => {
+  ['images', 'captions', 'timeline'].forEach((tab) => {
     $(`v3-tab-${tab}`).classList.toggle('hidden', tab !== name);
   });
-  if (name === 'assets') renderV3Assets();
+  if (name === 'images') renderV3Assets();
   if (name === 'captions') renderV3Captions();
   if (name === 'timeline') renderV3Timeline();
 }
@@ -2315,78 +2417,106 @@ function wireV3Events() {
   });
 }
 
-// ── Assets tab ──
+// ── Images tab ──
 function renderV3Assets() {
   const scene = state.scenes[state.v3Index];
   if (!scene) return;
   const generating = state.generating.has(scene.id);
 
   const versions = (scene.asset_timeline || []).filter(a => a.type === 'still' && a.path);
-  const gallery = $('assets-gallery');
-  const preview = $('assets-preview');
+  const countEl = $('images-count');
+  const statusEl = $('images-status');
+  const badgeEl = $('images-approve-badge');
+  const promptEl = $('images-prompt');
+  const genBtn = $('images-gen-btn');
+  const unapproveBtn = $('images-unapprove-btn');
+  const gallery = $('images-gallery');
+  const preview = $('images-preview');
+  const uploadZone = $('images-upload-zone');
+
+  // Count
+  countEl.textContent = versions.length === 1 ? '1 image in scene' : `${versions.length} images in scene`;
+
+  // Status
+  if (generating) {
+    statusEl.style.display = 'inline';
+    statusEl.innerHTML = '<span class="spinner"></span> Generating…';
+  } else if (state.lastGenReady === scene.id) {
+    statusEl.style.display = 'inline';
+    statusEl.textContent = '✓ Image ready';
+  } else {
+    statusEl.style.display = 'none';
+  }
+
+  // Approved badge
+  const hasApproved = versions.some(v => v.approved);
+  if (hasApproved) {
+    badgeEl.textContent = '✓ Approved';
+    badgeEl.className = 'badge approved';
+    badgeEl.style.display = 'inline-block';
+  } else if (versions.length > 0) {
+    badgeEl.textContent = 'Draft';
+    badgeEl.className = 'badge draft';
+    badgeEl.style.display = 'inline-block';
+  } else {
+    badgeEl.style.display = 'none';
+  }
+
+  // Prompt box — fill with visual_direction
+  if (!promptEl.dataset.userEdited || promptEl.dataset.userEdited === 'false') {
+    promptEl.value = scene.visual_direction || '';
+  }
+
+  // Generate button
+  if (generating) {
+    genBtn.innerHTML = '<span class="spinner"></span> Generating…';
+    genBtn.disabled = true;
+  } else {
+    genBtn.textContent = '+ Generate Image';
+    genBtn.disabled = false;
+  }
+  unapproveBtn.disabled = !hasApproved;
 
   // Gallery
   if (!versions.length) {
-    gallery.innerHTML = '<div class="empty">No images yet. Generate one using the Gen button above.</div>';
+    gallery.innerHTML = '<div class="empty">No images yet. Drop an image above or generate one.</div>';
     preview.style.display = 'none';
   } else {
     renderV3AssetsGallery(scene);
     renderV3AssetsPreview(scene);
     preview.style.display = 'flex';
   }
-
-  // Button states
-  const hasApproved = versions.length > 0;
-  const genBtn = $('assets-gen-btn');
-  if (generating) {
-    genBtn.innerHTML = '<span class="spinner"></span>Generating…';
-    genBtn.disabled = true;
-    $('assets-regen-btn').disabled = true;
-  } else {
-    genBtn.textContent = '+ Gen';
-    genBtn.disabled = false;
-    $('assets-regen-btn').disabled = false;
-  }
-  $('assets-unapprove-btn').disabled = !hasApproved;
-
-  // Badge
-  const badge = $('assets-status-badge');
-  if (hasApproved) {
-    badge.textContent = '\u2713 Approved';
-    badge.className = 'badge approved';
-    badge.style.display = 'inline-block';
-  } else if (versions.length > 0) {
-    badge.textContent = 'Draft';
-    badge.className = 'badge draft';
-    badge.style.display = 'inline-block';
-  } else {
-    badge.style.display = 'none';
-  }
 }
 
 function renderV3AssetsGallery(scene) {
-  const gallery = $('assets-gallery');
+  const gallery = $('images-gallery');
   const versions = (scene.asset_timeline || []).filter(a => a.type === 'still' && a.path);
-  const idx = 0;
 
   gallery.innerHTML = versions.map((v, i) => {
-    const active = i === idx ? ' active' : '';
-    const approved = v.approved ? '<span class="badge approved-badge">Approved</span>' : '';
-    return '<div class="assets-thumb' + active + '" data-variant-index="' + i + '">' +
-      '<img src="' + escHtml(imageUrl(v.path)) + '" alt="v' + (i + 1) + '">' +
-      approved +
-      '<div class="assets-thumb-label">v' + (i + 1) + '</div>' +
+    const selected = v.approved ? ' selected' : '';
+    const approvedBadge = v.approved ? '<span class="badge approved-badge">Approved</span>' : '';
+    const filename = v.path.split('/').pop();
+    const dims = v.width && v.height ? `${v.width}×${v.height}` : 'Still';
+    return '<div class="images-thumb' + selected + '" data-variant-index="' + i + '">' +
+      '<img src="' + escHtml(imageUrl(v.path)) + '" alt="' + escHtml(filename) + '" loading="lazy">' +
+      approvedBadge +
+      '<span class="badge dim-badge">' + escHtml(dims) + '</span>' +
+      '<div class="images-thumb-label" title="' + escHtml(filename) + '">' + escHtml(filename) + '</div>' +
       '</div>';
   }).join('');
 }
 
 function renderV3AssetsPreview(scene) {
-  const img = $('assets-preview-img');
+  const img = $('images-preview-img');
+  const info = $('images-preview-info');
   const versions = (scene.asset_timeline || []).filter(a => a.type === 'still' && a.path);
-  const idx = 0;
-  const v = versions[idx];
+  if (!versions.length) return;
+  const v = versions[0];
   if (v) {
     img.src = imageUrl(v.path);
+    const filename = v.path.split('/').pop();
+    const dims = v.width && v.height ? `${v.width}×${v.height}` : '';
+    info.textContent = [filename, dims].filter(Boolean).join(' — ');
   }
 }
 
@@ -2963,7 +3093,9 @@ function buildTimelinePropsHtml() {
   const blend = a.blend_mode || 'normal';
   const motion = a.motion_preset || 'none';
   const layer = (a.layer != null ? a.layer : 0);
-  const pathLabel = a.path ? a.path.split('/').pop() : ('asset-' + ai);
+  const pathLabel = a.path === '__caption__'
+    ? (a.caption_phrases && a.caption_phrases[0] ? ('💬 ' + a.caption_phrases[0].text.substring(0, 60)) : 'caption')
+    : (a.path ? a.path.split('/').pop() : ('asset-' + ai));
   const typeLabel = (a.type === 'video' ? 'Video' : 'Still');
   let html = '' +
     '<div class="timeline-props open" data-ai="' + ai + '">' +
@@ -3429,7 +3561,9 @@ function renderV3Timeline() {
       if (assetLayer !== layer) return;
       const startX = (a.time_in || 0) * pxPerSec;
       const width = (a.duration_secs || 5) * pxPerSec;
-      const label = a.path ? a.path.split('/').pop().replace(/\.(jpg|png|jpeg|webp)$/i, '') : 'asset-' + ai;
+      const label = a.path === '__caption__'
+        ? (a.caption_phrases && a.caption_phrases[0] ? ('💬 ' + a.caption_phrases[0].text.substring(0, 40) + (a.caption_phrases[0].text.length > 40 ? '…' : '')) : '💬 caption')
+        : (a.path ? a.path.split('/').pop().replace(/\.(jpg|png|jpeg|webp)$/i, '') : 'asset-' + ai);
       const selCls = (_selectedAssetIndex === ai) ? ' selected' : '';
       const apprCls = a.approved ? ' approved' : '';
       blocksHtml +=
