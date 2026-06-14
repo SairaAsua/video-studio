@@ -16,6 +16,7 @@
     --text-muted: #6a7a8e;
     --accent: #e94560;
     --accent-dim: #b8304f;
+    --accent-dim-transparent: rgba(184,48,79,0.12);
     --green: #4fc35a;
     --red: #e0556a;
     --radius: 8px;
@@ -73,6 +74,23 @@
     scrollbar-width: thin;
     scrollbar-color: rgba(233,69,96,0.3) transparent;
   }
+
+  /* VIDEO CLIPS v3.5.2 */
+  .video-ref-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(80px,1fr)); gap:6px }
+  .video-ref-thumb { width:100%; aspect-ratio:4/3; border-radius:4px; background:var(--bg); border:1px solid var(--border); overflow:hidden; cursor:pointer; position:relative }
+  .video-ref-thumb img { width:100%; height:100%; object-fit:cover }
+  .video-ref-thumb.selected { border: 2px solid var(--accent); box-shadow: 0 0 8px var(--accent-dim) }
+  .video-ref-thumb .ref-num { position:absolute; top:2px; right:4px; font-size:10px; color:#fff; background:var(--accent); border-radius:3px; padding:0 4px }
+  .video-clips-split { display:flex; gap:12px; height:100% }
+  .video-settings { display:flex; flex-direction:column; gap:10px; width:300px; flex-shrink:0; padding:8px; background:var(--surface); border-radius:6px; overflow-y:auto }
+  .video-settings label { font-size:11px; color:var(--text-muted); display:block; margin-bottom:4px }
+  .video-settings textarea { width:100%; min-height:80px; background:var(--bg); border:1px solid var(--border); border-radius:4px; color:var(--text); padding:6px; font-size:12px; resize:vertical }
+  .video-gallery { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px }
+  .video-clip-card { width:160px; background:var(--surface); border:1px solid var(--border); border-radius:6px; overflow:hidden }
+  .video-clip-card .thumb { width:100%; aspect-ratio:16/9; background:#111; display:flex; align-items:center; justify-content:center; font-size:28px; color:var(--accent) }
+  .video-clip-card .info { padding:6px 8px; font-size:10px; color:var(--text-muted) }
+  .video-upload-zone { border:2px dashed var(--border); border-radius:8px; padding:20px; text-align:center; margin-top:12px; cursor:pointer; transition:border-color 0.2s }
+  .video-upload-zone.drag-over { border-color:var(--accent); background:var(--accent-dim-transparent) }
 
   /* ── Header ── */
   header {
@@ -1537,6 +1555,7 @@
         <div class="v3-workspace-header" id="v3-workspace-header"></div>
         <div class="v3-tab-bar" id="v3-tab-bar">
           <button class="tab-btn active" data-v3-tab="images">IMAGES</button>
+          <button class="tab-btn" data-v3-tab="videoclips">VIDEO CLIPS</button>
           <button class="tab-btn" data-v3-tab="captions">Captions</button>
           <button class="tab-btn" data-v3-tab="timeline">Timeline</button>
         </div>
@@ -1573,6 +1592,7 @@
             <div class="images-preview-info" id="images-preview-info"></div>
           </div>
         </div>
+        <div class="v3-tab-body hidden" id="v3-tab-videoclips"></div>
         <div class="v3-tab-body hidden" id="v3-tab-captions"></div>
         <div class="v3-tab-body hidden" id="v3-tab-timeline"></div>
         <div class="v3-tab-body hidden" id="v3-tab-export">
@@ -1697,6 +1717,7 @@ const state = {
   slug: '',
   scenes: [],
   generating: new Set(),   // scene ids currently being generated
+  lastGenReady: null,      // for Images tab status "✓ Image ready" after SSE
   originalScript: '',
   loadToken: 0,            // guards against out-of-order loadProject responses
   prompts: null,           // { image: {...}, video: {...} } loaded from /api/.../prompts
@@ -1775,10 +1796,13 @@ function connectSSE() {
           setRenderMsg(`Generating scene ${sceneId}…`);
         }
         break;
+      case 'image_ready':
       case 'image-added':
         if (Number.isFinite(sceneId)) {
           state.generating.delete(sceneId);
+          state.lastGenReady = sceneId;
           setRenderMsg(`Scene ${sceneId}: image ready`);
+          if (state.scenes[state.v3Index]?.id === sceneId) renderV3Assets();
         }
         reloadCurrent(data.slug);
         break;
@@ -1794,6 +1818,12 @@ function connectSSE() {
               refreshTimelineFromServer(sceneId);
             }
           }
+        }
+        break;
+      case 'video-registered':
+        if (Number.isFinite(sceneId)) {
+          // Refresh the current scene and switch to video clips tab
+          reloadCurrent(data.slug);
         }
         break;
       default:
@@ -2259,6 +2289,7 @@ function renderV3Workspace() {
   if (activeTab) {
     const tabName = activeTab.dataset.v3Tab;
     if (tabName === 'images') renderV3Assets();
+    else if (tabName === 'videoclips') renderV3VideoClips();
     if (tabName === 'captions') renderV3Captions();
     else if (tabName === 'timeline') renderV3Timeline();
   }
@@ -2268,10 +2299,11 @@ function switchV3Tab(name) {
   document.querySelectorAll('#v3-tab-bar [data-v3-tab]').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.v3Tab === name);
   });
-  ['images', 'captions', 'timeline'].forEach((tab) => {
+  ['images', 'videoclips', 'captions', 'timeline'].forEach((tab) => {
     $(`v3-tab-${tab}`).classList.toggle('hidden', tab !== name);
   });
   if (name === 'images') renderV3Assets();
+  if (name === 'videoclips') renderV3VideoClips();
   if (name === 'captions') renderV3Captions();
   if (name === 'timeline') renderV3Timeline();
 }
@@ -2313,36 +2345,80 @@ function wireV3Events() {
     if (btn) switchV3Tab(btn.dataset.v3Tab);
   });
 
-  // Assets tab: Gen button
-  $('assets-gen-btn').addEventListener('click', async () => {
+  // Images tab: Gen button (with throttle)
+  let genThrottle = false;
+  $('images-gen-btn').addEventListener('click', async () => {
+    if (genThrottle) return;
     const scene = state.scenes[state.v3Index];
     if (!scene || state.generating.has(scene.id)) return;
+    genThrottle = true;
     state.selectedScene = scene.id;
     updateRegenButton();
     await generateVersion(scene.id);
     renderV3Assets();
+    setTimeout(() => { genThrottle = false; }, 2000);
   });
 
-  // Assets tab: Regen button
-  $('assets-regen-btn').addEventListener('click', async () => {
-    const scene = state.scenes[state.v3Index];
-    if (!scene) return;
-    try {
-      await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene.id + '/image', { method: 'POST' });
-      setRenderMsg('Requested regen for scene ' + scene.id + '.');
-      renderV3Assets();
-    } catch (err) {
-      setRenderMsg(err.message, true);
-    }
-  });
-
-  // Assets tab: Unapprove button
-  $('assets-unapprove-btn').addEventListener('click', async () => {
+  // Images tab: Unapprove button
+  $('images-unapprove-btn').addEventListener('click', async () => {
     const scene = state.scenes[state.v3Index];
     if (!scene) return;
     try {
       const data = await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene.id + '/unapprove', { method: 'POST' });
       showUndoToast(scene.id, data.prev_approved_path);
+      await loadProject(state.slug);
+    } catch (err) {
+      setRenderMsg(err.message, true);
+    }
+  });
+
+  // Images tab: Prompt box — mark as user-edited on input
+  $('images-prompt').addEventListener('input', () => {
+    $('images-prompt').dataset.userEdited = 'true';
+  });
+
+  // Images tab: Upload — drag-and-drop + click-to-browse
+  const uploadZone = $('images-upload-zone');
+  const uploadInput = $('images-upload-input');
+
+  uploadZone.addEventListener('click', () => uploadInput.click());
+
+  uploadZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadZone.classList.add('drag-over');
+  });
+  uploadZone.addEventListener('dragleave', () => {
+    uploadZone.classList.remove('drag-over');
+  });
+  uploadZone.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    uploadZone.classList.remove('drag-over');
+    const files = e.dataTransfer.files;
+    if (files.length) await handleImageUpload(files[0]);
+  });
+  uploadInput.addEventListener('change', async () => {
+    if (uploadInput.files.length) {
+      await handleImageUpload(uploadInput.files[0]);
+      uploadInput.value = '';
+    }
+  });
+
+  // Images gallery: click to select/deselect (toggle approval via navigate+approve)
+  $('v3-tab-images').addEventListener('click', async (e) => {
+    const thumb = e.target.closest('.images-thumb');
+    if (!thumb) return;
+    const idx = Number(thumb.dataset.variantIndex);
+    if (!Number.isFinite(idx)) return;
+    const scene = state.scenes[state.v3Index];
+    if (!scene) return;
+
+    try {
+      await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene.id + '/navigate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ delta: idx - (scene.current_image || 0) }),
+      });
+      await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene.id + '/approve', { method: 'POST' });
       await loadProject(state.slug);
     } catch (err) {
       setRenderMsg(err.message, true);
@@ -2360,30 +2436,6 @@ function wireV3Events() {
       } catch (err) {
         setRenderMsg(err.message, true);
       }
-    }
-  });
-
-  // Assets gallery: click variant to approve (single-active-approve)
-  $('v3-tab-assets').addEventListener('click', async (e) => {
-    const thumb = e.target.closest('.assets-thumb');
-    if (!thumb) return;
-    const idx = Number(thumb.dataset.variantIndex);
-    if (!Number.isFinite(idx)) return;
-    const scene = state.scenes[state.v3Index];
-    if (!scene) return;
-
-    try {
-      // Navigate to this variant first
-      await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene.id + '/navigate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ delta: idx - (scene.current_image || 0) }),
-      });
-      // Then approve it (single-active-approve — server clears all other variants)
-      await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene.id + '/approve', { method: 'POST' });
-      await loadProject(state.slug);
-    } catch (err) {
-      setRenderMsg(err.message, true);
     }
   });
 
@@ -2517,6 +2569,40 @@ function renderV3AssetsPreview(scene) {
     const filename = v.path.split('/').pop();
     const dims = v.width && v.height ? `${v.width}×${v.height}` : '';
     info.textContent = [filename, dims].filter(Boolean).join(' — ');
+  }
+}
+
+async function handleImageUpload(file) {
+  const scene = state.scenes[state.v3Index];
+  if (!scene) return;
+  const statusEl = $('images-status');
+
+  // Validate type
+  const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
+  if (!validTypes.includes(file.type)) {
+    setRenderMsg('Only JPG, PNG, and WebP files are supported.', true);
+    return;
+  }
+
+  statusEl.style.display = 'inline';
+  statusEl.textContent = 'Uploading…';
+
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('type', 'still');
+    formData.append('scene_id', scene.id);
+
+    await api('/api/project/' + encodeURIComponent(state.slug) + '/add-version', {
+      method: 'POST',
+      body: formData,
+    });
+
+    statusEl.textContent = '✓ Uploaded';
+    await loadProject(state.slug);
+  } catch (err) {
+    setRenderMsg('Upload failed: ' + err.message, true);
+    statusEl.style.display = 'none';
   }
 }
 
@@ -2679,6 +2765,94 @@ function renderV3Captions() {
       if (fs) fs.classList.toggle('hidden', sel.value !== 'body');
     });
   });
+}
+
+function renderV3VideoClips() {
+  const container = $('v3-tab-videoclips');
+  const scene = state.scenes[state.v3Index];
+  if (!scene) {
+    container.innerHTML = '<div class="empty">No scene selected</div>';
+    return;
+  }
+  const stills = (scene.asset_timeline || []).filter(a => a.type === 'still' && a.path);
+  const videos = (scene.asset_timeline || []).filter(a => a.type === 'video');
+  const defaultPrompt = scene.visual_direction || '';
+
+  let html = '';
+  html += '<div class="video-clips-split">';
+
+  // LEFT: reference grid
+  html += '<div style="flex:1; min-width:0; display:flex; flex-direction:column;">';
+  html += '<div style="font-size:11px; color:var(--text-muted); margin-bottom:4px;">Reference images (' + stills.length + ' available; <span id="v3-video-ref-count">0 selected, max 7</span>)</div>';
+  html += '<div class="video-ref-grid">';
+  stills.forEach(function(s) {
+    const p = escHtml(s.path);
+    const toggleCode = "var t=this,grid=t.parentNode,lab=grid.parentNode.querySelector('#v3-video-ref-count'); var sels=Array.from(grid.querySelectorAll('.video-ref-thumb.selected')); if(!t.classList.contains('selected')){ if(sels.length>=7)return; t.classList.add('selected'); }else{t.classList.remove('selected');} var now=Array.from(grid.querySelectorAll('.video-ref-thumb.selected')); now.forEach(function(el,i){ var n=el.querySelector('.ref-num'); if(!n){n=document.createElement('span');n.className='ref-num';el.appendChild(n);} n.textContent=(i+1); }); Array.from(grid.querySelectorAll('.video-ref-thumb:not(.selected) .ref-num')).forEach(function(n){n.remove();}); if(lab) lab.textContent=now.length+' selected, max 7';";
+    html += '<div class="video-ref-thumb" data-path="' + p + '" onclick="' + toggleCode + '">';
+    html += '<img src="' + escHtml(imageUrl(s.path)) + '" alt="">';
+    html += '</div>';
+  });
+  html += '</div>';
+  if (!stills.length) {
+    html += '<div class="empty" style="font-size:11px;margin-top:6px;">No stills in asset_timeline. Add images in IMAGES tab first.</div>';
+  }
+  html += '</div>';
+
+  // RIGHT: settings
+  html += '<div class="video-settings">';
+  html += '<div><label>Duration</label>';
+  html += '<label style="display:inline;margin-right:8px;font-size:11px;color:var(--text);"><input type="radio" name="v3-vc-dur" value="3"> 3s</label>';
+  html += '<label style="display:inline;margin-right:8px;font-size:11px;color:var(--text);"><input type="radio" name="v3-vc-dur" value="5" checked> 5s</label>';
+  html += '<label style="display:inline;margin-right:8px;font-size:11px;color:var(--text);"><input type="radio" name="v3-vc-dur" value="8"> 8s</label>';
+  html += '<label style="display:inline;font-size:11px;color:var(--text);"><input type="radio" name="v3-vc-dur" value="10"> 10s</label>';
+  html += '</div>';
+  html += '<div><label>Aspect ratio</label><select id="v3-vc-aspect">';
+  ['16:9','9:16','1:1','4:3','3:4'].forEach(function(ar){ var sel=(ar==='16:9'?' selected':''); html += '<option value="' + ar + '"' + sel + '>' + ar + '</option>'; });
+  html += '</select></div>';
+  html += '<div><label>Resolution</label><select id="v3-vc-res"><option value="720p" selected>720p</option><option value="480p">480p</option></select></div>';
+  html += '<div><label>Prompt</label><textarea id="v3-vc-prompt">' + escHtml(defaultPrompt) + '</textarea></div>';
+  var genCode = "(async function(){ var cont=$('v3-tab-videoclips'); if(!cont)return; var sels=Array.from(cont.querySelectorAll('.video-ref-thumb.selected')).map(function(t){return t.getAttribute('data-path');}); var durEl=cont.querySelector('input[name=\"v3-vc-dur\"]:checked'); var dur=durEl?parseFloat(durEl.value):5; var asp=cont.querySelector('#v3-vc-aspect')?cont.querySelector('#v3-vc-aspect').value:'16:9'; var res=cont.querySelector('#v3-vc-res')?cont.querySelector('#v3-vc-res').value:'720p'; var pr=cont.querySelector('#v3-vc-prompt')?cont.querySelector('#v3-vc-prompt').value:''; var sc=state.scenes[state.v3Index]; var sl=state.slug; if(!sc||!sl)return; var btns=cont.getElementsByTagName('button'); var btn=btns[btns.length-1]; var old=btn?btn.textContent:'Generate Video'; if(btn){btn.textContent='Generating…';btn.disabled=true;} try{ await api('/api/project/'+encodeURIComponent(sl)+'/storyboard/'+sc.id+'/video',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:pr,reference_image_paths:sels,duration_secs:dur,aspect_ratio:asp,resolution:res})}); if(btn){btn.textContent='Generate Video';btn.disabled=false;} }catch(e){ if(btn){btn.textContent=old;btn.disabled=false;} alert('Video request failed: '+ (e&&e.message?e.message:e)); } })();";
+  html += '<button class="btn" onclick="' + genCode + '">Generate Video</button>';
+  html += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Sends request; agent generates &amp; registers.</div>';
+  html += '</div>';
+
+  html += '</div>'; // split end
+
+  // Gallery
+  html += '<div style="margin:12px 0 4px;font-size:11px;color:var(--text-muted);">Video clips in this scene (' + videos.length + ')</div>';
+  html += '<div class="video-gallery">';
+  if (!videos.length) {
+    html += '<div class="empty" style="width:100%;">No video clips yet.</div>';
+  } else {
+    videos.forEach(function(v){
+      var p = escHtml(v.path || '');
+      var dur = (v.duration_secs != null ? v.duration_secs : 5.0);
+      var ar = escHtml(v.aspect_ratio || '16:9');
+      var fname = p.split('/').pop() || '?';
+      var addCode = "(async function(){ var sc=state.scenes[state.v3Index]; if(!sc)return; var sl=state.slug; var tl=JSON.parse(JSON.stringify(sc.asset_timeline||[])); tl.push({type:'video',path:'" + p + "',duration_secs:5.0,aspect_ratio:'16:9',layer:0,approved:false,caption_phrases:[]}); try{ await api('/api/project/'+encodeURIComponent(sl)+'/storyboard/'+sc.id+'/timeline',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({asset_timeline:tl})}); reloadCurrent(sl); }catch(e){alert(e.message||e);} })();";
+      var delCode = "(async function(){ var sc=state.scenes[state.v3Index]; if(!sc)return; var sl=state.slug; var tl=JSON.parse(JSON.stringify(sc.asset_timeline||[])); var idx=-1; for(var i=0;i<tl.length;i++){ if(tl[i].type==='video' && tl[i].path==='" + p + "'){idx=i;break;} } if(idx>=0){ tl.splice(idx,1); try{ await api('/api/project/'+encodeURIComponent(sl)+'/storyboard/'+sc.id+'/timeline',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({asset_timeline:tl})}); reloadCurrent(sl); }catch(e){alert(e.message||e);} } })();";
+      html += '<div class="video-clip-card">';
+      html += '<div class="thumb">▶</div>';
+      html += '<div class="info">' + dur + 's · ' + ar + '<br><span style="font-size:9px;opacity:.7;">' + fname + '</span></div>';
+      html += '<div style="padding:3px 4px 4px;display:flex;gap:4px;border-top:1px solid var(--border);">';
+      html += '<button class="btn" style="flex:1;font-size:9px;padding:1px 3px;" onclick="' + addCode + '">Add to Timeline</button>';
+      html += '<button class="btn" style="flex:1;font-size:9px;padding:1px 3px;background:#c0392b;color:#fff;" onclick="' + delCode + '">Delete</button>';
+      html += '</div>';
+      html += '</div>';
+    });
+  }
+  html += '</div>';
+
+  // Upload
+  var zoneOnclick = "document.getElementById('v3-video-upload-input').click();";
+  var dropH = "event.preventDefault();this.classList.remove('drag-over');var f=event.dataTransfer.files[0];if(f){(async function(){var fd=new FormData();fd.append('file',f);fd.append('type','video');var sc=state.scenes[state.v3Index];var sl=state.slug;try{await api('/api/project/'+encodeURIComponent(sl)+'/storyboard/'+sc.id+'/add-version',{method:'POST',body:fd});reloadCurrent(sl);}catch(e){alert('Upload failed: '+(e.message||e));}})();}";
+  var chgH = "var f=this.files[0];if(f){(async function(){var fd=new FormData();fd.append('file',f);fd.append('type','video');var sc=state.scenes[state.v3Index];var sl=state.slug;try{await api('/api/project/'+encodeURIComponent(sl)+'/storyboard/'+sc.id+'/add-version',{method:'POST',body:fd});reloadCurrent(sl);}catch(e){alert('Upload failed: '+(e.message||e));}})();}this.value='';";
+  html += '<div class="video-upload-zone" onclick="' + zoneOnclick + '" ondragover="event.preventDefault();this.classList.add(\'drag-over\');" ondragleave="this.classList.remove(\'drag-over\');" ondrop="' + dropH + '">';
+  html += 'Drop MP4/WebM/MOV here or click to upload';
+  html += '<input type="file" id="v3-video-upload-input" accept=".mp4,.webm,.mov" style="display:none" onchange="' + chgH + '">';
+  html += '</div>';
+
+  container.innerHTML = html;
 }
 
 // ── Timeline tab ──
@@ -4294,13 +4468,14 @@ async function init() {
     document.querySelectorAll('#v3-tab-bar [data-v3-tab]').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.v3Tab === name);
     });
-    ['assets', 'captions', 'timeline'].forEach((tab) => {
+    ['images', 'videoclips', 'captions', 'timeline'].forEach((tab) => {
       const el = $(`v3-tab-${tab}`);
       if (el) el.classList.toggle('hidden', tab !== name);
     });
     const expEl = $('v3-tab-export');
     if (expEl) expEl.classList.toggle('hidden', name !== 'export');
-    if (name === 'assets' && typeof renderV3Assets === 'function') renderV3Assets();
+    if (name === 'images' && typeof renderV3Assets === 'function') renderV3Assets();
+    if (name === 'videoclips' && typeof renderV3VideoClips === 'function') renderV3VideoClips();
     if (name === 'captions' && typeof renderV3Captions === 'function') renderV3Captions();
     if (name === 'timeline' && typeof renderV3Timeline === 'function') renderV3Timeline();
     if (name === 'export') {

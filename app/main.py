@@ -46,7 +46,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -286,6 +286,47 @@ async def request_scene_image(slug: str, scene_id: int):
     scene = find_scene(sb, scene_id)
     await sse_notify(slug, f"image-requested:{scene_id}")
     return {"ok": True, "scene": scene_id, "status": "requested", "provider": "xai-grok-imagine"}
+
+
+class VideoGenRequest(BaseModel):
+    prompt: str = ""
+    reference_image_paths: list[str] = []
+    duration_secs: float = 5.0
+    aspect_ratio: str = "16:9"
+    resolution: str = "720p"
+
+
+@app.post("/api/project/{slug}/storyboard/{scene_id}/video")
+async def request_scene_video(slug: str, scene_id: int, body: VideoGenRequest):
+    """
+    Enqueue a video generation request. The agent listens on the SSE stream
+    (with full request payload), calls Grok Imagine video, saves to scenes/,
+    and registers via /add-version.
+    """
+    slug = slug.strip()
+    project_dir(slug)  # validate
+
+    sb_path, sb = load_storyboard(slug)
+    scene = find_scene(sb, scene_id)
+
+    req_payload = {
+        "prompt": body.prompt or "",
+        "reference_image_paths": body.reference_image_paths or [],
+        "duration_secs": body.duration_secs,
+        "aspect_ratio": body.aspect_ratio,
+        "resolution": body.resolution,
+    }
+    event_name = f"video-requested:{scene_id}"
+    # Include full request payload as JSON-able data alongside scene_id (agent reads from SSE event data)
+    data = json.dumps({
+        "slug": slug,
+        "event": event_name,
+        "scene_id": scene_id,
+        "request": req_payload
+    })
+    for q in sse_clients:
+        await q.put(data)
+    return {"ok": True, "status": "requested", "provider": "xai-grok-imagine-video"}
 
 
 @app.post("/api/project/{slug}/render")
@@ -809,6 +850,65 @@ async def render_scene_preview(slug: str, body: RenderScenePreviewRequest):
         "cached": False,
         "url": f"/projects/{slug}/renders/scene-{body.scene_id:02d}.mp4",
     }
+
+
+@app.post("/api/project/{slug}/storyboard/{scene_id}/add-version")
+async def add_scene_version(slug: str, scene_id: int, file: UploadFile = File(...), type: str = Form(...)):
+    """
+    Accept uploaded video file and append a 'video' entry to the scene's asset_timeline.
+    Called by the agent after successful video gen, or by user manual upload in VIDEO CLIPS tab.
+    """
+    slug = slug.strip()
+    project_dir(slug)  # validate
+
+    if type != "video":
+        raise HTTPException(400, "type form field must be 'video'")
+
+    if not file or not file.filename:
+        raise HTTPException(400, "file is required")
+
+    ext = Path(file.filename).suffix.lower()
+    if ext not in {".mp4", ".webm", ".mov"}:
+        raise HTTPException(400, "Invalid file extension; only .mp4, .webm, .mov allowed")
+
+    sb_path, sb = load_storyboard(slug)
+    scene = find_scene(sb, scene_id)
+
+    scenes_dir = project_dir(slug) / "scenes"
+    scenes_dir.mkdir(parents=True, exist_ok=True)
+
+    # keep original filename; make unique if collision
+    target_name = file.filename
+    target = scenes_dir / target_name
+    if target.exists():
+        stem = Path(target_name).stem
+        suffix = ext
+        i = 1
+        while target.exists():
+            target = scenes_dir / f"{stem}-v{i}{suffix}"
+            i += 1
+        target_name = target.name
+
+    content = await file.read()
+    target.write_bytes(content)
+
+    rel_path = f"scenes/{target_name}"
+    entry = {
+        "type": "video",
+        "path": rel_path,
+        "duration_secs": 5.0,
+        "aspect_ratio": "16:9",
+        "layer": 0,
+        "approved": False,
+        "caption_phrases": [],
+    }
+    if not isinstance(scene.get("asset_timeline"), list):
+        scene["asset_timeline"] = []
+    scene["asset_timeline"].append(entry)
+
+    save_storyboard(sb_path, sb)
+    await sse_notify(slug, f"video-registered:{scene_id}")
+    return {"ok": True, "path": rel_path}
 
 
 # ---------------------------------------------------------------------------
