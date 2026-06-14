@@ -325,6 +325,8 @@ async def request_scene_image(slug: str, scene_id: int):
 
 def _generate_image_sync(prompt: str, output_dir: str) -> dict:
     """Synchronous wrapper — called from thread pool."""
+    import os, sys
+    sys.path.insert(0, str(Path(os.environ.get('HERMES_HOME', os.path.expanduser('~/.hermes'))) / 'hermes-agent'))
     import importlib.util
     bridge = Path(__file__).resolve().parent.parent / "lib" / "gen_bridge.py"
     spec = importlib.util.spec_from_file_location("gen_bridge", bridge)
