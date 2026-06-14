@@ -2103,6 +2103,43 @@ async function generateVersion(id) {
   }
 }
 
+
+async function generateVideoClip() {
+  const cont = $('v3-tab-videoclips');
+  if (!cont) return;
+  const scene = state.scenes[state.v3Index];
+  if (!scene || !state.slug) return;
+
+  const sels = Array.from(cont.querySelectorAll('.video-ref-thumb.selected')).map(function(t) { return t.getAttribute('data-path'); });
+  const durEl = cont.querySelector('input[name="v3-vc-dur"]:checked');
+  const dur = durEl ? parseFloat(durEl.value) : 5;
+  const asp = (cont.querySelector('#v3-vc-aspect') || {}).value || '16:9';
+  const res = (cont.querySelector('#v3-vc-res') || {}).value || '720p';
+  const pr = (cont.querySelector('#v3-vc-prompt') || {}).value || '';
+
+  const btn = document.getElementById('v3-vc-gen-btn');
+  const oldText = btn ? btn.textContent : 'Generate Video';
+  if (btn) { btn.textContent = 'Generating…'; btn.disabled = true; }
+  setRenderMsg('Generating video…');
+  const st = $('images-status');
+  if (st) { st.style.display = 'inline'; st.innerHTML = '<span class="spinner"></span> Generating video…'; }
+
+  try {
+    await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene.id + '/video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: pr, reference_image_paths: sels, duration_secs: dur, aspect_ratio: asp, resolution: res }),
+    });
+    setRenderMsg('Video generated ✓');
+    if (st) { st.innerHTML = '✓ Video ready'; }
+  } catch (e) {
+    setRenderMsg('Video failed: ' + (e.message || e), true);
+    if (st) { st.innerHTML = '⚠ Video failed'; }
+  }
+  if (btn) { btn.textContent = oldText; btn.disabled = false; }
+}
+
+
 // ── Script + render ──
 
 async function saveScript() {
@@ -2563,8 +2600,11 @@ function wireV3Events() {
 
   // Images gallery: click handled in renderV3AssetsGallery via event listeners
 
-  // Video Clips tab initialization
-  initVideoClipsTab();
+  // Video Clips tab: generate button
+  document.addEventListener('click', function(e) {
+    if (e.target.id !== 'v3-vc-gen-btn' || e.target.disabled) return;
+    generateVideoClip();
+  });
 
   // Captions tab: + Add phrase, remove phrase
   $('v3-tab-captions').addEventListener('click', (e) => {
@@ -3048,9 +3088,8 @@ function renderV3VideoClips() {
   html += '</select></div>';
   html += '<div><label>Resolution</label><select id="v3-vc-res"><option value="720p" selected>720p</option><option value="480p">480p</option></select></div>';
   html += '<div><label id="v3-vc-prompt-label">Prompt</label><textarea id="v3-vc-prompt">' + escHtml(defaultPrompt) + '</textarea></div>';
-  var genCode = "(async function(){ var cont=$('v3-tab-videoclips'); if(!cont)return; var sels=Array.from(cont.querySelectorAll('.video-ref-thumb.selected')).map(function(t){return t.getAttribute('data-path');}); var durEl=cont.querySelector('input[name=\"v3-vc-dur\"]:checked'); var dur=durEl?parseFloat(durEl.value):5; var asp=cont.querySelector('#v3-vc-aspect')?cont.querySelector('#v3-vc-aspect').value:'16:9'; var res=cont.querySelector('#v3-vc-res')?cont.querySelector('#v3-vc-res').value:'720p'; var pr=cont.querySelector('#v3-vc-prompt')?cont.querySelector('#v3-vc-prompt').value:''; var sc=state.scenes[state.v3Index]; var sl=state.slug; if(!sc||!sl)return; var btns=cont.getElementsByTagName('button'); var btn=btns[btns.length-1]; var old=btn?btn.textContent:'Generate Video'; if(btn){btn.textContent='Generating…';btn.disabled=true;} try{ await api('/api/project/'+encodeURIComponent(sl)+'/storyboard/'+sc.id+'/video',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:pr,reference_image_paths:sels,duration_secs:dur,aspect_ratio:asp,resolution:res})}); if(btn){btn.textContent='Generate Video';btn.disabled=false;} }catch(e){ if(btn){btn.textContent=old;btn.disabled=false;} alert('Video request failed: '+ (e&&e.message?e.message:e)); } })();";
-  html += '<button class="btn" onclick="' + genCode + '">Generate Video</button>';
-  html += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Sends request; agent generates &amp; registers.</div>';
+  html += '<button class="btn primary" id="v3-vc-gen-btn">Generate Video</button>';
+  html += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Video generates on server; appears here when ready.</div>';
   html += '</div>';
 
   html += '</div>'; // split end
