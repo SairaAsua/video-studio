@@ -828,13 +828,13 @@
     flex-shrink: 0;
   }
   .images-prompt-label {
-    display: block; font-size: 11px; text-transform: uppercase;
-    letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 6px;
+    display: block; font-size: 12px; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 4px;
   }
   .images-prompt {
     width: 100%; background: var(--bg); color: var(--text);
     border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 8px 10px; font-family: var(--font); font-size: 13px;
+    padding: 8px 10px; font-family: var(--font); font-size: 14px;
     resize: vertical; line-height: 1.5;
   }
   .images-prompt:focus { outline: none; border-color: var(--accent); }
@@ -843,33 +843,30 @@
     padding: 10px 14px; border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
-  .images-upload-zone {
-    padding: 16px 14px; border-bottom: 1px solid var(--border);
-    flex-shrink: 0; cursor: pointer;
+  .images-upload-btn {
+    background: var(--surface); color: var(--text-muted);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 6px 10px; cursor: pointer; font-size: 13px;
+    display: flex; align-items: center; gap: 4px;
+    transition: all 0.2s; flex-shrink: 0;
   }
-  .images-upload-inner {
-    border: 2px dashed var(--border); border-radius: var(--radius);
-    padding: 20px; text-align: center; color: var(--text-muted);
-    font-size: 13px; transition: border-color 0.2s;
-  }
-  .images-upload-zone.drag-over .images-upload-inner,
-  .images-upload-inner:hover { border-color: var(--accent); color: var(--text); }
-  .images-upload-icon { display: block; font-size: 24px; margin-bottom: 6px; }
+  .images-upload-btn:hover { border-color: var(--accent); color: var(--text); }
+  .images-upload-btn .icon { font-size: 16px; }
   .images-gallery {
     display: flex; gap: 8px; padding: 14px;
     overflow-x: auto; flex-shrink: 0; min-height: 100px;
   }
   .images-thumb {
-    width: 120px; flex-shrink: 0; cursor: pointer;
-    border: 2px solid transparent; border-radius: 6px;
-    overflow: hidden; transition: border-color 0.15s;
+    width: 150px; flex-shrink: 0; cursor: pointer;
+    border: 2px solid transparent; border-radius: 8px;
+    overflow: hidden; transition: border-color 0.2s, transform 0.2s;
     background: var(--surface); position: relative;
   }
-  .images-thumb:hover { border-color: var(--accent-dim); }
+  .images-thumb:hover { border-color: var(--accent-dim); transform: scale(1.02); }
   .images-thumb.selected { border-color: var(--accent); }
-  .images-thumb img { width: 100%; height: 80px; object-fit: cover; display: block; }
+  .images-thumb img { width: 100%; height: 100px; object-fit: cover; display: block; }
   .images-thumb-label {
-    padding: 4px 6px; font-size: 10px; color: var(--text-muted);
+    padding: 5px 8px; font-size: 11px; color: var(--text-muted);
     text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .images-thumb .badge.approved-badge {
@@ -1570,37 +1567,49 @@
           <button class="tab-btn" data-v3-tab="timeline">Timeline</button>
         </div>
         <div class="v3-tab-body" id="v3-tab-images">
-          <!-- Status bar -->
+          <!-- Status bar (count + status + badge kept for references) -->
           <div class="images-toolbar">
             <span class="images-count" id="images-count">0 images in scene</span>
             <span class="images-status" id="images-status" style="display:none"></span>
             <span class="badge" id="images-approve-badge" style="display:none"></span>
           </div>
-          <!-- Prompt box -->
-          <div class="images-prompt-area">
-            <label class="images-prompt-label" id="images-prompt-label" for="images-prompt">Visual direction prompt</label>
-            <textarea class="images-prompt" id="images-prompt" rows="3" placeholder="Describe the desired image…"></textarea>
-          </div>
-          <!-- Actions: Generate + Unapprove -->
-          <div class="images-actions">
-            <button class="btn primary" id="images-gen-btn">+ Generate Image</button>
-            <button class="btn danger" id="images-unapprove-btn" disabled>Unapprove</button>
-          </div>
-          <!-- Upload zone -->
-          <div class="images-upload-zone" id="images-upload-zone">
-            <div class="images-upload-inner">
-              <span class="images-upload-icon">📁</span>
-              <span>Drop JPG/PNG/WebP here or click to upload</span>
-              <input type="file" id="images-upload-input" accept=".jpg,.jpeg,.png,.webp" style="display:none">
-            </div>
-          </div>
-          <!-- Gallery -->
-          <div class="images-gallery" id="images-gallery"></div>
-          <!-- Preview -->
+
+          <!-- Preview area (full-width above gallery per redesign) -->
           <div class="images-preview" id="images-preview" style="display:none">
-            <img id="images-preview-img">
+            <div class="preview-image-container">
+              <img id="images-preview-img" alt="Selected image preview">
+              <div class="preview-overlay">
+                <button type="button" class="preview-fs-btn">🔍 View Fullscreen</button>
+              </div>
+            </div>
             <div class="images-preview-info" id="images-preview-info"></div>
           </div>
+
+          <!-- Compact sticky prompt + generate bar (merged prompt-area + actions) -->
+          <div class="images-prompt-bar">
+            <span class="images-prompt-label" id="images-prompt-label">Prompt</span>
+            <div class="prompt-input-row">
+              <textarea class="images-prompt" id="images-prompt" rows="2" placeholder="Describe the image you want..."></textarea>
+              <button class="btn primary" id="images-gen-btn">✨ Generate</button>
+              <button class="btn danger" id="images-unapprove-btn" disabled title="Unapprove">Unapprove</button>
+            </div>
+          </div>
+
+          <!-- Gallery grid / empty state -->
+          <div class="images-gallery" id="images-gallery"></div>
+
+          <!-- Upload: collapsed thin bar (click to expand the zone). Includes required IDs for refs + wiring compat -->
+          <div class="images-upload-collapsed" id="images-upload-collapsed">📁 Drop images or click to upload (JPG, PNG, WebP)</div>
+          <div class="images-upload-zone" id="images-upload-zone" style="display:none">
+            <div class="images-upload-inner">
+              <span class="images-upload-icon">📁</span>
+              <span>Drop JPG/PNG/WebP here or click to browse</span>
+              <input type="file" id="images-upload-input" accept=".jpg,.jpeg,.png,.webp" style="display:none">
+              <button type="button" class="upload-collapse" title="Collapse upload zone" onclick="event.stopPropagation(); document.getElementById('images-upload-zone').style.display='none'; document.getElementById('images-upload-collapsed').style.display='block';">−</button>
+            </div>
+          </div>
+          <!-- dummy to keep current upload-btn wiring from erroring (no visible UI) -->
+          <div id="images-upload-btn" style="display:none"></div>
         </div>
         <div class="v3-tab-body hidden" id="v3-tab-videoclips"></div>
         <div class="v3-tab-body hidden" id="v3-tab-captions"></div>
@@ -2390,21 +2399,21 @@ function wireV3Events() {
   });
 
   // Images tab: Upload — drag-and-drop + click-to-browse
-  const uploadZone = $('images-upload-zone');
+  const uploadZone = $('images-upload-btn');
   const uploadInput = $('images-upload-input');
 
   uploadZone.addEventListener('click', () => uploadInput.click());
 
   uploadZone.addEventListener('dragover', (e) => {
     e.preventDefault();
-    uploadZone.classList.add('drag-over');
+    uploadZone.style.borderColor = 'var(--accent)';
   });
   uploadZone.addEventListener('dragleave', () => {
-    uploadZone.classList.remove('drag-over');
+    uploadZone.style.borderColor = '';
   });
   uploadZone.addEventListener('drop', async (e) => {
     e.preventDefault();
-    uploadZone.classList.remove('drag-over');
+    uploadZone.style.borderColor = '';
     const files = e.dataTransfer.files;
     if (files.length) await handleImageUpload(files[0]);
   });
@@ -2415,49 +2424,10 @@ function wireV3Events() {
     }
   });
 
-  // Images gallery: click to select/deselect (toggle approval via navigate+approve)
-  $('v3-tab-images').addEventListener('click', async (e) => {
-    const thumb = e.target.closest('.images-thumb');
-    if (!thumb) return;
-    const idx = Number(thumb.dataset.variantIndex);
-    if (!Number.isFinite(idx)) return;
-    const scene = state.scenes[state.v3Index];
-    if (!scene) return;
+  // Images gallery: click handled in renderV3AssetsGallery via event listeners
 
-    try {
-      await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene.id + '/navigate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ delta: idx - (scene.current_image || 0) }),
-      });
-      await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene.id + '/approve', { method: 'POST' });
-      await loadProject(state.slug);
-      const asset = (scene.asset_timeline || []).filter(a => a.type === 'still' && a.path)[idx];
-      if (asset && asset.prompt) {
-        $('images-prompt').value = asset.prompt;
-        $('images-prompt').dataset.userEdited = 'false';
-        const fname = asset.path.split('/').pop();
-        const lbl = $('images-prompt-label');
-        if (lbl) lbl.textContent = 'Prompt from ' + fname;
-      }
-    } catch (err) {
-      setRenderMsg(err.message, true);
-    }
-  });
-
-  // Undo toast button
-  $('undo-btn').addEventListener('click', async () => {
-    const sid = state.undoSceneId;
-    hideUndoToast();
-    if (sid != null) {
-      try {
-        await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + sid + '/approve', { method: 'POST' });
-        await loadProject(state.slug);
-      } catch (err) {
-        setRenderMsg(err.message, true);
-      }
-    }
-  });
+  // Video Clips tab initialization
+  initVideoClipsTab();
 
   // Captions tab: + Add phrase, remove phrase
   $('v3-tab-captions').addEventListener('click', (e) => {
