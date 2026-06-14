@@ -887,6 +887,11 @@
     background: rgba(0,0,0,0.65); color: #fff; padding: 1px 3px; border-radius: 3px;
     pointer-events: none;
   }
+  .video-clip-card .prompt-indicator {
+    position: absolute; top: 2px; right: 2px; font-size: 9px; line-height: 1;
+    background: rgba(0,0,0,0.65); color: #fff; padding: 0 2px; border-radius: 2px;
+    pointer-events: none;
+  }
   .images-preview {
     flex: 1; display: flex; flex-direction: column; align-items: center;
     justify-content: center; padding: 14px;
@@ -2380,6 +2385,8 @@ function wireV3Events() {
   // Images tab: Prompt box — mark as user-edited on input
   $('images-prompt').addEventListener('input', () => {
     $('images-prompt').dataset.userEdited = 'true';
+    const lbl = $('images-prompt-label');
+    if (lbl) lbl.textContent = 'Custom prompt';
   });
 
   // Images tab: Upload — drag-and-drop + click-to-browse
@@ -2825,7 +2832,7 @@ function renderV3VideoClips() {
   ['16:9','9:16','1:1','4:3','3:4'].forEach(function(ar){ var sel=(ar==='16:9'?' selected':''); html += '<option value="' + ar + '"' + sel + '>' + ar + '</option>'; });
   html += '</select></div>';
   html += '<div><label>Resolution</label><select id="v3-vc-res"><option value="720p" selected>720p</option><option value="480p">480p</option></select></div>';
-  html += '<div><label>Prompt</label><textarea id="v3-vc-prompt">' + escHtml(defaultPrompt) + '</textarea></div>';
+  html += '<div><label id="v3-vc-prompt-label">Prompt</label><textarea id="v3-vc-prompt">' + escHtml(defaultPrompt) + '</textarea></div>';
   var genCode = "(async function(){ var cont=$('v3-tab-videoclips'); if(!cont)return; var sels=Array.from(cont.querySelectorAll('.video-ref-thumb.selected')).map(function(t){return t.getAttribute('data-path');}); var durEl=cont.querySelector('input[name=\"v3-vc-dur\"]:checked'); var dur=durEl?parseFloat(durEl.value):5; var asp=cont.querySelector('#v3-vc-aspect')?cont.querySelector('#v3-vc-aspect').value:'16:9'; var res=cont.querySelector('#v3-vc-res')?cont.querySelector('#v3-vc-res').value:'720p'; var pr=cont.querySelector('#v3-vc-prompt')?cont.querySelector('#v3-vc-prompt').value:''; var sc=state.scenes[state.v3Index]; var sl=state.slug; if(!sc||!sl)return; var btns=cont.getElementsByTagName('button'); var btn=btns[btns.length-1]; var old=btn?btn.textContent:'Generate Video'; if(btn){btn.textContent='Generating…';btn.disabled=true;} try{ await api('/api/project/'+encodeURIComponent(sl)+'/storyboard/'+sc.id+'/video',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:pr,reference_image_paths:sels,duration_secs:dur,aspect_ratio:asp,resolution:res})}); if(btn){btn.textContent='Generate Video';btn.disabled=false;} }catch(e){ if(btn){btn.textContent=old;btn.disabled=false;} alert('Video request failed: '+ (e&&e.message?e.message:e)); } })();";
   html += '<button class="btn" onclick="' + genCode + '">Generate Video</button>';
   html += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Sends request; agent generates &amp; registers.</div>';
@@ -2846,7 +2853,11 @@ function renderV3VideoClips() {
       var fname = p.split('/').pop() || '?';
       var addCode = "(async function(){ var sc=state.scenes[state.v3Index]; if(!sc)return; var sl=state.slug; var tl=JSON.parse(JSON.stringify(sc.asset_timeline||[])); tl.push({type:'video',path:'" + p + "',duration_secs:5.0,aspect_ratio:'16:9',layer:0,approved:false,caption_phrases:[]}); try{ await api('/api/project/'+encodeURIComponent(sl)+'/storyboard/'+sc.id+'/timeline',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({asset_timeline:tl})}); reloadCurrent(sl); }catch(e){alert(e.message||e);} })();";
       var delCode = "(async function(){ var sc=state.scenes[state.v3Index]; if(!sc)return; var sl=state.slug; var tl=JSON.parse(JSON.stringify(sc.asset_timeline||[])); var idx=-1; for(var i=0;i<tl.length;i++){ if(tl[i].type==='video' && tl[i].path==='" + p + "'){idx=i;break;} } if(idx>=0){ tl.splice(idx,1); try{ await api('/api/project/'+encodeURIComponent(sl)+'/storyboard/'+sc.id+'/timeline',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({asset_timeline:tl})}); reloadCurrent(sl); }catch(e){alert(e.message||e);} } })();";
-      html += '<div class="video-clip-card">';
+      var hasP = !!(v.prompt);
+      html += '<div class="video-clip-card" data-prompt="' + escHtml(v.prompt || '') + '" data-fname="' + escHtml(fname) + '" onclick="(function(el){var pr=el.getAttribute(\'data-prompt\');var ta=document.getElementById(\'v3-vc-prompt\');var lab=document.getElementById(\'v3-vc-prompt-label\');if(ta&&pr){ta.value=pr;ta.dataset.userEdited=\'false\';}if(lab&&pr){lab.textContent=\'Prompt from \'+el.getAttribute(\'data-fname\');}})(this)">';
+      if (hasP) {
+        html += '<span class="prompt-indicator" title="Has saved prompt">📋</span>';
+      }
       html += '<div class="thumb">▶</div>';
       html += '<div class="info">' + dur + 's · ' + ar + '<br><span style="font-size:9px;opacity:.7;">' + fname + '</span></div>';
       html += '<div style="padding:3px 4px 4px;display:flex;gap:4px;border-top:1px solid var(--border);">';
@@ -2868,6 +2879,15 @@ function renderV3VideoClips() {
   html += '</div>';
 
   container.innerHTML = html;
+
+  var vcp = $('v3-vc-prompt');
+  var vcl = $('v3-vc-prompt-label');
+  if (vcp && vcl) {
+    vcp.addEventListener('input', function() {
+      this.dataset.userEdited = 'true';
+      vcl.textContent = 'Custom prompt';
+    });
+  }
 }
 
 // ── Timeline tab ──
