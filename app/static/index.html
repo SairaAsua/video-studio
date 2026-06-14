@@ -2493,6 +2493,12 @@ function wireV3Events() {
 function renderV3Assets() {
   const scene = state.scenes[state.v3Index];
   if (!scene) return;
+
+  // Reset image selection when scene changes
+  if (_lastAssetsSceneId !== scene.id) {
+    _lastAssetsSceneId = scene.id;
+    _selectedImageIndex = 0;
+  }
   const generating = state.generating.has(scene.id);
 
   const versions = (scene.asset_timeline || []).filter(a => a.type === 'still' && a.path);
@@ -2578,6 +2584,16 @@ function renderV3AssetsGallery(scene) {
       '<div class="images-thumb-label" title="' + escHtml(filename) + '">' + escHtml(filename) + '</div>' +
       '</div>';
   }).join('');
+
+  // Wire thumbnail clicks to update preview
+  gallery.querySelectorAll('.images-thumb').forEach(function(thumb, i) {
+    thumb.addEventListener('click', function() {
+      _selectedImageIndex = i;
+      renderV3AssetsPreview(scene);
+      gallery.querySelectorAll('.images-thumb').forEach(function(t) { t.classList.remove('selected'); });
+      thumb.classList.add('selected');
+    });
+  });
 }
 
 function renderV3AssetsPreview(scene) {
@@ -2585,7 +2601,8 @@ function renderV3AssetsPreview(scene) {
   const info = $('images-preview-info');
   const versions = (scene.asset_timeline || []).filter(a => a.type === 'still' && a.path);
   if (!versions.length) return;
-  const v = versions[0];
+  const idx = Math.min(_selectedImageIndex || 0, versions.length - 1);
+  const v = versions[idx];
   if (v) {
     img.src = imageUrl(v.path);
     const filename = v.path.split('/').pop();
@@ -2896,6 +2913,8 @@ let _timelineAssets = null;
 let _timelineDirty = false;  // T7: used by previewRender to decide whether to persistTimeline() before render
 let _saveTimelineTimer = null;
 let _selectedAssetIndex = null;
+let _selectedImageIndex = 0;
+let _lastAssetsSceneId = null;
 let _currentPxPerSec = 40;
 let _lastTimelineSceneId = null;
 let _dragState = null;
