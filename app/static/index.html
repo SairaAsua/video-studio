@@ -3713,6 +3713,8 @@ let _timelineDirty = false;  // T7: used by previewRender to decide whether to p
 let _saveTimelineTimer = null;
 let _selectedAssetIndex = null;
 let _selectedImageIndex = 0;
+let _binAddedPaths = new Set();  // T8: paths dragged from bin → timeline (exclude from bin to prevent duplicate)
+let _pendingSelectionPath = null;  // T8: fallback when _selectedAssetIndex is reset by race
 let _multiSel = [];
 let _lastClickIdx = 0;
 let _lastAssetsSceneId = null;
@@ -4018,7 +4020,7 @@ function buildTimelineBin(currentAssets, sceneId) {
   const targetScene = (state.scenes || []).find(s => s.id === sid);
   if (targetScene) {
     (targetScene.asset_timeline || []).forEach(a => {
-      if ((a.type === 'still' || a.type === 'video') && a.path) {
+      if ((a.type === 'still' || a.type === 'video') && a.path && !_binAddedPaths.has(a.path)) {
         allAssets.push({ path: a.path, layer: a.layer, sceneId: targetScene.id, type: a.type });
       }
     });
@@ -4101,6 +4103,16 @@ function buildCaptionsSubEditor(asset, ai) {
 }
 
 function buildTimelinePropsHtml() {
+  // T8: fallback — if _selectedAssetIndex was reset by race, recover via _pendingSelectionPath
+  if (_selectedAssetIndex == null && _pendingSelectionPath && _timelineAssets) {
+    for (let i = 0; i < _timelineAssets.length; i++) {
+      if (_timelineAssets[i] && _timelineAssets[i].path === _pendingSelectionPath) {
+        _selectedAssetIndex = i;
+        break;
+      }
+    }
+    _pendingSelectionPath = null;  // consumed
+  }
   if (!_timelineAssets || _selectedAssetIndex == null || !_timelineAssets[_selectedAssetIndex]) {
     return '' +
       '<div class="timeline-props">' +
@@ -4385,7 +4397,8 @@ function startDragTimeline(evt, blockEl, ai, mode, side) {
     origDur: (asset.duration_secs != null ? asset.duration_secs : 5),
     pxPerSec: pxPerSec,
     labelColW: labelColW,
-    timeZeroClientX: timeZeroClientX
+    timeZeroClientX: timeZeroClientX,
+    moved: false  // T8: track if real drag vs click
   };
   blockEl.classList.add('dragging');
   try { blockEl.setPointerCapture(evt.pointerId); } catch (e) {}
@@ -4394,8 +4407,17 @@ function startDragTimeline(evt, blockEl, ai, mode, side) {
   }
   function onPointerUp(upEvt) {
     const ai = _dragState ? _dragState.ai : null;
+    const wasMoved = _dragState ? _dragState.moved : false;
     cleanupDrag();
     if (ai != null) {
+      // T8: pointerdown captured pointer + fired onPointerUp. Real click event is suppressed
+      // by setPointerCapture on most browsers. We must restore selection here. (Drag is preserved
+      // in asset.time_in/duration_secs from handleDragMove; re-render below reads that.)
+      if (!wasMoved) {
+        // Click (no drag): set selection so props panel shows
+        _selectedAssetIndex = ai;
+        _pendingSelectionPath = _timelineAssets[ai] ? _timelineAssets[ai].path : null;
+      }
       markTimelineDirty();
       renderV3Timeline();
     }
@@ -4418,6 +4440,7 @@ function handleDragMove(moveEvt) {
   const ds = _dragState;
   const asset = _timelineAssets[ds.ai];
   if (!asset) return;
+  ds.moved = true;  // T8: real drag in progress
   const dx = moveEvt.clientX - ds.startClientX;
   const dTime = dx / ds.pxPerSec;
   let newTimeIn = ds.origTimeIn;
@@ -4516,6 +4539,8 @@ function renderV3Timeline() {
     _lastTimelineSceneId = currentSceneId;
     _undoStack = [];
     _redoStack = [];
+    _binAddedPaths = new Set();  // T8
+    _pendingSelectionPath = null;
   } else if (!_timelineDirty) {
     // same scene, clean: refresh from latest scene data (e.g. after other SSE reloadCurrent) but keep selection
     const prevSel = _selectedAssetIndex;
@@ -4691,6 +4716,7 @@ function renderV3Timeline() {
     block.addEventListener('click', function(e) {
       if (e.target.closest('.timeline-trim-handle')) return;
       _selectedAssetIndex = ai;
+      _pendingSelectionPath = _timelineAssets[ai] ? _timelineAssets[ai].path : null;  // T8
       renderV3Timeline();
     });
   }
@@ -4702,6 +4728,7 @@ function renderV3Timeline() {
       if (e.target.closest('.timeline-block')) return;
       if (_selectedAssetIndex != null) {
         _selectedAssetIndex = null;
+        _pendingSelectionPath = null;  // T8
         renderV3Timeline();
       }
     });
@@ -4859,6 +4886,8 @@ function renderV3Timeline() {
       normalizeAsset(newAsset);
       _timelineAssets.push(newAsset);
       _selectedAssetIndex = _timelineAssets.length - 1;
+      _binAddedPaths.add(path);  // T8: prevent duplicate in bin
+      _pendingSelectionPath = path;  // T8: fallback for race
       markTimelineDirty();
       renderV3Timeline();
     });

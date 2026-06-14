@@ -23,10 +23,22 @@
           "layer": 0,
           "caption_phrases": [],
           "prompt": "[BEACON_WORLD]\nPremium contemplative wellness aesthetic. Costa Rica tropical setting or warm-lit interior. Substance-free, non-ceremonial, no new-age imagery, no crystals or sound-bath cliches. Golden hour outdoor light or a single warm indoor light source against deep shadow. Materials: tropical hardwood, bamboo, raw linen, volcanic stone. Color palette: deep near-black backgrounds, warm gold/amber accent (#c9a03a), muted steel blue secondary, soft white highlights. No human faces visible; only backs of heads, silhouettes, or hands in stillness. Atmosphere of slow attention and care, not celebration. Do NOT invent or render any specific device, instrument, speaker, or piece of equipment \u2014 only natural materials (wood, linen, stone, water, plants) and architectural elements (palapas, benches, pavilions).\n\n[IMAGE_STYLE]\nCinematic widescreen composition, 16:9, 1280x720 or higher. Contemplative stillness with a sense of held breath. Rule-of-thirds subject placement leaving room for text overlay in upper third. Three depth planes (foreground/midground/background) with atmospheric layering \u2014 mist, soft focus, or out-of-focus foreground. Negative space is intentional, not empty. The image should feel like a single frame from a slow-moving documentary about a careful practice, not a stock photo. No on-screen text, no UI elements, no logos, no watermarks, no invented technical equipment.\n\n[SCENE]\nIn just a few years, deep inner journeys moved from cultural niche to international premium demand. Mental health went mainstream, the psychedelic renaissance legitimized inner work culturally, and wellness tourism learned to sell it. The supply side did not keep up. The deepest formats remain tied to substances or clinical settings, while what hospitality can actually integrate often stays generic.",
-          "time_in": 12.27,
-          "duration_secs": 5,
+          "time_in": 15.17,
+          "duration_secs": 3.35,
           "blend_mode": "normal",
           "opacity": 1
+        },
+        {
+          "type": "still",
+          "layer": 3,
+          "path": "scenes/gen-1781435563.jpg",
+          "approved": false,
+          "duration_secs": 5,
+          "motion_preset": null,
+          "time_in": 1.6,
+          "caption_phrases": [],
+          "blend_mode": "normal",
+          "opacity": 0.68
         }
       ],
       "caption_phrases": [
@@ -139,7 +151,30 @@
       "id": 5,
       "text": "Each no protects the value of the yes. We won't sell standalone hardware. We won't mass-certify facilitators. We won't put the app or AI up front before validating the in-person experience. We won't make clinical or pseudoscientific claims. We won't mix Beacon with substances. The app is advanced, not launched. AI is a future operator-mediated layer. The lane is deliberately non-clinical wellness \u2014 that discipline is the condition that makes the project legible.",
       "visual_direction": "Open architecture at the edge of dusk. A large palapa roof of palm thatch, supported by raw wooden posts, opens to a clearing in the tropical forest. Beyond the clearing: the sky in deep teal, the last light of sunset just gone. On the left, a single figure seen from behind, standing still, head slightly bowed, hands at their sides \u2014 in the practice, not watching us. The right half of the frame is open clearing and sky. Quiet, large, restrained. The clearing has no equipment, no staging \u2014 just earth and light.",
-      "asset_timeline": [],
+      "asset_timeline": [
+        {
+          "type": "still",
+          "path": "scenes/gen-1781437549.jpg",
+          "layer": 0,
+          "caption_phrases": [],
+          "prompt": "[BEACON_WORLD]\nPremium contemplative wellness aesthetic. Costa Rica tropical setting or warm-lit interior. Substance-free, non-ceremonial, no new-age imagery, no crystals or sound-bath cliches. Golden hour outdoor light or a single warm indoor light source against deep shadow. Materials: tropical hardwood, bamboo, raw linen, volcanic stone. Color palette: deep near-black backgrounds, warm gold/amber accent (#c9a03a), muted steel blue secondary, soft white highlights. No human faces visible; only backs of heads, silhouettes, or hands in stillness. Atmosphere of slow attention and care, not celebration. Do NOT invent or render any specific device, instrument, speaker, or piece of equipment \u2014 only natural materials (wood, linen, stone, water, plants) and architectural elements (palapas, benches, pavilions).\n\n[IMAGE_STYLE]\nCinematic widescreen composition, 16:9, 1280x720 or higher. Contemplative stillness with a sense of held breath. Rule-of-thirds subject placement leaving room for text overlay in upper third. Three depth planes (foreground/midground/background) with atmospheric layering \u2014 mist, soft focus, or out-of-focus foreground. Negative space is intentional, not empty. The image should feel like a single frame from a slow-moving documentary about a careful practice, not a stock photo. No on-screen text, no UI elements, no logos, no watermarks, no invented technical equipment.\n\n[SCENE]\nEach no protects the value of the yes. We won't sell standalone hardware. We won't mass-certify facilitators. We won't put the app or AI up front before validating the in-person experience. We won't make clinical or pseudoscientific claims. We won't mix Beacon with substances. The app is advanced, not launched. AI is a future operator-mediated layer. The lane is deliberately non-clinical wellness \u2014 that discipline is the condition that makes the project legible.\n\n[CUSTOM]\nOpen architecture at the edge of dusk. A large palapa roof of palm thatch, supported by raw wooden posts, opens to a clearing in the tropical forest. Beyond the clearing: the sky in deep teal, the last light of sunset just gone. On the left, a single figure seen from behind, standing still, head slightly bowed, hands at their sides \u2014 in the practice, not watching us. The right half of the frame is open clearing and sky. Quiet, large, restrained. The clearing has no equipment, no staging \u2014 just earth and light.",
+          "time_in": 0,
+          "duration_secs": 5,
+          "blend_mode": "normal",
+          "opacity": 1
+        },
+        {
+          "type": "still",
+          "path": "scenes/gen-1781437563.jpg",
+          "layer": 0,
+          "caption_phrases": [],
+          "prompt": "[BEACON_WORLD]\nPremium contemplative wellness aesthetic. Costa Rica tropical setting or warm-lit interior. Substance-free, non-ceremonial, no new-age imagery, no crystals or sound-bath cliches. Golden hour outdoor light or a single warm indoor light source against deep shadow. Materials: tropical hardwood, bamboo, raw linen, volcanic stone. Color palette: deep near-black backgrounds, warm gold/amber accent (#c9a03a), muted steel blue secondary, soft white highlights. No human faces visible; only backs of heads, silhouettes, or hands in stillness. Atmosphere of slow attention and care, not celebration. Do NOT invent or render any specific device, instrument, speaker, or piece of equipment \u2014 only natural materials (wood, linen, stone, water, plants) and architectural elements (palapas, benches, pavilions).\n\n[IMAGE_STYLE]\nCinematic widescreen composition, 16:9, 1280x720 or higher. Contemplative stillness with a sense of held breath. Rule-of-thirds subject placement leaving room for text overlay in upper third. Three depth planes (foreground/midground/background) with atmospheric layering \u2014 mist, soft focus, or out-of-focus foreground. Negative space is intentional, not empty. The image should feel like a single frame from a slow-moving documentary about a careful practice, not a stock photo. No on-screen text, no UI elements, no logos, no watermarks, no invented technical equipment.\n\n[SCENE]\nEach no protects the value of the yes. We won't sell standalone hardware. We won't mass-certify facilitators. We won't put the app or AI up front before validating the in-person experience. We won't make clinical or pseudoscientific claims. We won't mix Beacon with substances. The app is advanced, not launched. AI is a future operator-mediated layer. The lane is deliberately non-clinical wellness \u2014 that discipline is the condition that makes the project legible.",
+          "time_in": 0,
+          "duration_secs": 5,
+          "blend_mode": "normal",
+          "opacity": 1
+        }
+      ],
       "locked": false
     },
     {
