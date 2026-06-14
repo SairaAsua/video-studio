@@ -861,15 +861,17 @@ async def add_scene_version(slug: str, scene_id: int, file: UploadFile = File(..
     slug = slug.strip()
     project_dir(slug)  # validate
 
-    if type != "video":
-        raise HTTPException(400, "type form field must be 'video'")
+    if type not in ("still", "video"):
+        raise HTTPException(400, "type form field must be 'still' or 'video'")
 
     if not file or not file.filename:
         raise HTTPException(400, "file is required")
 
     ext = Path(file.filename).suffix.lower()
-    if ext not in {".mp4", ".webm", ".mov"}:
-        raise HTTPException(400, "Invalid file extension; only .mp4, .webm, .mov allowed")
+    if type == "still" and ext not in {".jpg", ".jpeg", ".png", ".webp"}:
+        raise HTTPException(400, "Invalid image extension; only .jpg, .png, .webp allowed")
+    if type == "video" and ext not in {".mp4", ".webm", ".mov"}:
+        raise HTTPException(400, "Invalid video extension; only .mp4, .webm, .mov allowed")
 
     sb_path, sb = load_storyboard(slug)
     scene = find_scene(sb, scene_id)
@@ -894,14 +896,14 @@ async def add_scene_version(slug: str, scene_id: int, file: UploadFile = File(..
 
     rel_path = f"scenes/{target_name}"
     entry = {
-        "type": "video",
+        "type": type,
         "path": rel_path,
-        "duration_secs": 5.0,
-        "aspect_ratio": "16:9",
+        "duration_secs": 5.0 if type == "video" else None,
         "layer": 0,
-        "approved": False,
         "caption_phrases": [],
     }
+    if type == "video":
+        entry["aspect_ratio"] = "16:9"
     if prompt:
         entry["prompt"] = prompt
     if not isinstance(scene.get("asset_timeline"), list):
@@ -909,7 +911,7 @@ async def add_scene_version(slug: str, scene_id: int, file: UploadFile = File(..
     scene["asset_timeline"].append(entry)
 
     save_storyboard(sb_path, sb)
-    await sse_notify(slug, f"video-registered:{scene_id}")
+    await sse_notify(slug, f"{type}-registered:{scene_id}")
     return {"ok": True, "path": rel_path}
 
 

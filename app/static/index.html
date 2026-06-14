@@ -2615,7 +2615,7 @@ async function handleImageUpload(file) {
     formData.append('type', 'still');
     formData.append('scene_id', scene.id);
 
-    await api('/api/project/' + encodeURIComponent(state.slug) + '/add-version', {
+    await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene.id + '/add-version', {
       method: 'POST',
       body: formData,
     });
