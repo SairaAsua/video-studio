@@ -882,6 +882,11 @@
     background: rgba(0,0,0,0.7); color: var(--text-muted);
     font-size: 8px; padding: 1px 4px; border-radius: 4px;
   }
+  .images-thumb .prompt-indicator {
+    position: absolute; top: 4px; left: 4px; font-size: 10px; line-height: 1;
+    background: rgba(0,0,0,0.65); color: #fff; padding: 1px 3px; border-radius: 3px;
+    pointer-events: none;
+  }
   .images-preview {
     flex: 1; display: flex; flex-direction: column; align-items: center;
     justify-content: center; padding: 14px;
@@ -1568,7 +1573,7 @@
           </div>
           <!-- Prompt box -->
           <div class="images-prompt-area">
-            <label class="images-prompt-label" for="images-prompt">Visual direction prompt</label>
+            <label class="images-prompt-label" id="images-prompt-label" for="images-prompt">Visual direction prompt</label>
             <textarea class="images-prompt" id="images-prompt" rows="3" placeholder="Describe the desired image…"></textarea>
           </div>
           <!-- Actions: Generate + Unapprove -->
@@ -2420,6 +2425,14 @@ function wireV3Events() {
       });
       await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene.id + '/approve', { method: 'POST' });
       await loadProject(state.slug);
+      const asset = (scene.asset_timeline || []).filter(a => a.type === 'still' && a.path)[idx];
+      if (asset && asset.prompt) {
+        $('images-prompt').value = asset.prompt;
+        $('images-prompt').dataset.userEdited = 'false';
+        const fname = asset.path.split('/').pop();
+        const lbl = $('images-prompt-label');
+        if (lbl) lbl.textContent = 'Prompt from ' + fname;
+      }
     } catch (err) {
       setRenderMsg(err.message, true);
     }
@@ -2549,7 +2562,9 @@ function renderV3AssetsGallery(scene) {
     const approvedBadge = v.approved ? '<span class="badge approved-badge">Approved</span>' : '';
     const filename = v.path.split('/').pop();
     const dims = v.width && v.height ? `${v.width}×${v.height}` : 'Still';
+    const promptInd = v.prompt ? '<span class="prompt-indicator" title="Has saved prompt">📋</span>' : '';
     return '<div class="images-thumb' + selected + '" data-variant-index="' + i + '">' +
+      promptInd +
       '<img src="' + escHtml(imageUrl(v.path)) + '" alt="' + escHtml(filename) + '" loading="lazy">' +
       approvedBadge +
       '<span class="badge dim-badge">' + escHtml(dims) + '</span>' +

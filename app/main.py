@@ -853,7 +853,7 @@ async def render_scene_preview(slug: str, body: RenderScenePreviewRequest):
 
 
 @app.post("/api/project/{slug}/storyboard/{scene_id}/add-version")
-async def add_scene_version(slug: str, scene_id: int, file: UploadFile = File(...), type: str = Form(...)):
+async def add_scene_version(slug: str, scene_id: int, file: UploadFile = File(...), type: str = Form(...), prompt: str = Form("")):
     """
     Accept uploaded video file and append a 'video' entry to the scene's asset_timeline.
     Called by the agent after successful video gen, or by user manual upload in VIDEO CLIPS tab.
@@ -902,6 +902,8 @@ async def add_scene_version(slug: str, scene_id: int, file: UploadFile = File(..
         "approved": False,
         "caption_phrases": [],
     }
+    if prompt:
+        entry["prompt"] = prompt
     if not isinstance(scene.get("asset_timeline"), list):
         scene["asset_timeline"] = []
     scene["asset_timeline"].append(entry)

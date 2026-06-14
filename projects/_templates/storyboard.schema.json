@@ -38,6 +38,10 @@
                   "type": ["integer", "null"],
                   "description": "Generation seed, null for Grok (no seed control)."
                 },
+                "prompt": {
+                  "type": "string",
+                  "description": "Text prompt used to generate this image. Saved so it can be reused or iterated."
+                },
                 "approved": { "type": "boolean", "default": false },
                 "duration_secs": {
                   "type": "number",

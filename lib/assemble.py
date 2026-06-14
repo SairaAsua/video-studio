@@ -17,7 +17,7 @@ Pipeline:
 Note: engine currently uses sequential `duration_secs` per-asset for
 time windows; absolute `time_in`/`time_out` overlay support is a known gap.
 
-Drops all references to: images[], motion_preset, approved, motion_override.
+Drops all references to: images[], motion_preset, motion_override.
 The data model field for motion is `motion` (per-asset).
 
 Transition support (cross-scene):
@@ -470,8 +470,8 @@ def main():
         print(f"Rendered: {output}")
         return
 
-    # All scenes must have at least one 'still' or 'video' asset with a valid path
-    # in their asset_timeline before a full render.
+    # Full-run gate: scene valid for render if >=1 asset with type still or video + valid path.
+    # (No approved state.)
     invalid = []
     for s in scenes:
         assets = [a for a in s.get("asset_timeline", [])
