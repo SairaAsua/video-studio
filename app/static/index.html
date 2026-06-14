@@ -929,14 +929,20 @@
     pointer-events: none;
   }
   .images-preview-row {
-    display: flex;
-    gap: 12px;
-    flex-shrink: 0;
+    display: flex; gap: 12px; flex-shrink: 0;
+    min-height: 220px;
   }
   .images-preview {
-    display: flex; flex-direction: column; flex: 0 0 55%;
+    display: flex; flex-direction: column; flex: 0 0 52%;
     background: var(--surface); border-radius: var(--radius);
-    overflow: hidden; flex-shrink: 0;
+    overflow: hidden;
+  }
+  .images-prompt-area {
+    flex: 1; display: flex; flex-direction: column; gap: 6px;
+    min-width: 0;
+  }
+  .images-prompt-area .images-prompt {
+    flex: 1; width: 100%; resize: vertical; min-height: 80px; margin: 0;
   }
   .preview-image-container {
     position: relative; width: 100%; max-height: 300px;
@@ -962,8 +968,8 @@
   /* Edit panel */
   .preview-edit-btn {
     position: absolute;
-    top: 8px;
-    right: 60px;  /* left of the fullscreen button which is at top:8px right:8px */
+    bottom: 8px;
+    right: 8px;
     padding: 6px 12px;
     background: var(--accent);
     color: #fff;
@@ -1037,18 +1043,34 @@
   #v3-tab-videoclips { display: flex; flex-direction: column; overflow-y: auto; padding: 8px 10px; gap: 8px; }
   #v3-tab-videoclips.hidden { display: none; }
 
-  /* Prompt + Generate compact bar */
-  .images-prompt-bar {
-    flex: 1; background: var(--surface); border-radius: var(--radius);
-    padding: 8px 12px; display: flex; flex-direction: column;
+  /* Prompt: full-width textarea + compact action buttons */
+  .images-prompt-area {
+    display: flex; flex-direction: column; gap: 6px;
+    flex-shrink: 0;
   }
-  .prompt-input-row {
-    display: flex; align-items: stretch; gap: 8px; flex: 1;
+  .images-prompt-area .images-prompt {
+    width: 100%; resize: vertical; min-height: 48px; margin: 0;
   }
-  .prompt-input-row .images-prompt { flex: 1; margin: 0; resize: vertical; min-height: 60px; }
-  .prompt-input-row .btn { flex-shrink: 0; padding: 6px 14px; font-size: 13px; }
-  .prompt-input-row .btn.danger { padding: 6px 8px; font-size: 11px; background: transparent; border-color: var(--border); color: var(--text-muted); }
-  .prompt-input-row .btn.danger:hover:not(:disabled) { background: var(--red); border-color: var(--red); color: #fff; }
+  .images-prompt-toggles {
+    display: flex; gap: 12px; flex-wrap: wrap;
+  }
+  .prompt-toggle {
+    font-size: 11px; color: var(--text-muted); cursor: pointer;
+    display: flex; align-items: center; gap: 3px;
+  }
+  .prompt-toggle input { accent-color: var(--accent); }
+
+  .images-prompt-actions {
+    display: flex; gap: 6px; align-items: center;
+  }
+  .images-prompt-actions .btn { padding: 4px 12px; font-size: 12px; }
+  .images-prompt-actions .btn.danger {
+    padding: 4px 8px; font-size: 11px; background: transparent;
+    border-color: var(--border); color: var(--text-muted);
+  }
+  .images-prompt-actions .btn.danger:hover:not(:disabled) {
+    background: var(--red); border-color: var(--red); color: #fff;
+  }
 
   /* Collapsed upload bar + zone */
   .images-upload-collapsed {
@@ -1704,17 +1726,92 @@
   }
 
   @media (max-width: 1024px) {
-    .images-preview-row {
-      flex-direction: column;
-    }
     .images-preview {
-      flex: 0 0 auto;
       max-height: 260px;
     }
-    .images-prompt-bar {
-      flex: none;
-    }
   }
+
+.resources-drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+  margin: 10px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.resources-drop-zone.drag-over {
+  border-color: var(--accent);
+  background: var(--accent-dim-transparent);
+}
+.resource-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.resource-item:hover { background: var(--bg); }
+.resource-item .res-icon { font-size: 16px; width: 24px; text-align: center; }
+.resource-item .res-name { flex: 1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resource-item .res-size { color: var(--text-muted); font-size: 11px; width: 60px; text-align: right; }
+.resource-item .res-actions { display: flex; gap: 4px; }
+.resource-item .res-actions button {
+  background: transparent; border: 1px solid var(--border); color: var(--text-muted);
+  padding: 2px 6px; border-radius: 3px; cursor: pointer; font-size: 10px;
+}
+.resource-item .res-actions button:hover { border-color: var(--accent); color: var(--accent); }
+.resource-item .res-actions .res-delete:hover { border-color: var(--red); color: var(--red); }
+.resources-preview { background: var(--bg); border-top: 1px solid var(--border); margin-top: 8px; }
+.resources-preview-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.resources-preview-header span { font-size: 12px; color: var(--accent); font-weight: 600; }
+
+.script-gen-section {
+  border-top: 1px solid var(--border);
+  padding: 8px 12px;
+  background: var(--bg);
+  max-height: 240px;
+  overflow-y: auto;
+}
+.script-gen-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+.script-gen-sources {
+  margin-bottom: 6px;
+}
+.script-gen-sources label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 0;
+  cursor: pointer;
+}
+.script-gen-sources label input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+.script-gen-instructions textarea {
+  width: 100%;
+  min-height: 40px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  padding: 6px;
+  font-size: 11px;
+  font-family: var(--font);
+  resize: vertical;
+}
+.script-gen-instructions textarea:focus {
+  border-color: var(--accent-dim);
+}
 </style>
 </head>
 <body>
@@ -1725,6 +1822,7 @@
     <select id="project-select">
       <option value="">— select project —</option>
     </select>
+    <button class="btn" id="new-project-btn" title="Create new project" style="font-size:14px;padding:2px 8px;">+</button>
     <div class="status">
       <span class="status-dot" id="status-dot"></span>
       <span id="status-text">connecting…</span>
@@ -1742,6 +1840,19 @@
     </div>
     <textarea class="script-editor" id="script-editor"
       placeholder="Write narration script here...&#10;&#10;## Scene 1 — Title (0:00–0:45)&#10;Narration text...&#10;&#10;## Scene 2 — Title (0:45–1:30)&#10;Narration text..."></textarea>
+<div class="script-gen-section" id="script-gen-section" style="display:none">
+  <div class="script-gen-header">
+    <span>🤖 Script Generation</span>
+  </div>
+  <div class="script-gen-sources" id="script-gen-sources">
+    <div class="empty" style="font-size:11px;padding:8px;">Upload sources in the Resources tab first</div>
+  </div>
+  <div class="script-gen-instructions">
+    <textarea id="script-gen-instructions" placeholder="Instructions for the AI (e.g., 'Write a dramatic narration for a 3-minute video')" rows="2"></textarea>
+  </div>
+  <button class="btn primary" id="script-gen-btn" style="width:100%;margin-top:6px;">🤖 Generate Script</button>
+  <div id="script-gen-status" style="font-size:11px;color:var(--accent);padding:4px;display:none;"></div>
+</div>
     <div class="pane-resize-handle" id="pane-resize-handle"></div>
   </section>
 
@@ -1775,39 +1886,32 @@
             <span class="images-count" id="images-count">0 images in scene</span>
             <span class="images-status" id="images-status" style="display:none"></span>
             <span class="badge" id="images-approve-badge" style="display:none"></span>
+            <button class="btn" id="images-delete-sel-btn" style="display:none;margin-left:auto;font-size:11px;padding:2px 8px;background:#c0392b;color:#fff;">🗑 Delete selected</button>
           </div>
 
           <div class="images-preview-row">
-            <!-- Preview area (full-width above gallery per redesign) -->
             <div class="images-preview" id="images-preview" style="display:none">
               <div class="preview-image-container">
                 <img id="images-preview-img" alt="Selected image preview">
                 <div class="preview-overlay">
-                  <button type="button" class="preview-edit-btn" id="images-edit-btn">✨ Edit</button>
                   <button type="button" class="preview-fs-btn">🔍 View Fullscreen</button>
                 </div>
               </div>
               <div class="images-preview-info" id="images-preview-info"></div>
             </div>
-            <!-- Compact sticky prompt + generate bar (merged prompt-area + actions) -->
-            <div class="images-prompt-bar">
-              <span class="images-prompt-label" id="images-prompt-label">Prompt</span>
-              <div class="prompt-input-row">
-                <textarea class="images-prompt" id="images-prompt" rows="2" placeholder="Describe the image you want..."></textarea>
+            <div class="images-prompt-area">
+              <textarea class="images-prompt" id="images-prompt" rows="3" placeholder="Describe the image you want..."></textarea>
+              <div class="images-prompt-toggles" id="images-prompt-toggles">
+                <label class="prompt-toggle"><input type="checkbox" id="toggle-beacon" checked> Beacon World</label>
+                <label class="prompt-toggle"><input type="checkbox" id="toggle-style" checked> Image Style</label>
+                <label class="prompt-toggle"><input type="checkbox" id="toggle-scene" checked> Scene context</label>
+              </div>
+              <div class="images-prompt-actions">
                 <button class="btn primary" id="images-gen-btn">✨ Generate</button>
-                <button class="btn danger" id="images-unapprove-btn" disabled title="Unapprove">Unapprove</button>
+                <button class="btn" id="images-edit-btn2">✏️ Edit</button>
               </div>
             </div>
           </div>
-          <div class="images-edit-panel" id="images-edit-panel">
-            <textarea id="images-edit-prompt" placeholder="Describe how to edit this image..."></textarea>
-            <div class="edit-actions">
-              <button class="btn primary" id="images-edit-apply-btn">Apply Edit</button>
-              <button class="edit-cancel-btn" id="images-edit-cancel-btn">Cancel</button>
-            </div>
-          </div>
-
-          <!-- Gallery grid / empty state -->
           <div class="images-gallery" id="images-gallery"></div>
 
           <!-- Upload: collapsed thin bar (click to expand the zone). Includes required IDs for refs + wiring compat -->
@@ -1881,6 +1985,7 @@
       <div class="tools-tabs">
         <button class="tab-btn active" data-tools-tab="prompts">Prompts</button>
         <button class="tab-btn" data-tools-tab="exports">Exports</button>
+        <button class="tab-btn" data-tools-tab="resources">📁 Resources</button>
         <button class="tab-btn" data-tools-tab="render">Render</button>
       </div>
     </div>
@@ -1913,6 +2018,29 @@
       </div>
     </div>
 
+    <!-- Resources tab -->
+    <div class="tools-content hidden" id="tools-resources" data-pane="resources">
+      <div class="exports-toolbar">
+        <span class="exports-count" id="resources-count">0 files</span>
+        <button class="btn" id="resources-refresh-btn">Refresh</button>
+      </div>
+      <div class="resources-drop-zone" id="resources-drop-zone">
+        <span>📁 Drop PDF, MD, TXT, or images here</span>
+        <input type="file" id="resources-upload-input" accept=".pdf,.md,.txt,.jpg,.jpeg,.png,.webp" style="display:none" multiple>
+      </div>
+      <div class="exports-list" id="resources-list">
+        <div class="empty">Upload source files to use for script generation</div>
+      </div>
+      <!-- Preview panel (shown when preview clicked) -->
+      <div class="resources-preview" id="resources-preview" style="display:none">
+        <div class="resources-preview-header">
+          <span id="resources-preview-title"></span>
+          <button class="btn" id="resources-preview-close">✕</button>
+        </div>
+        <pre id="resources-preview-content" style="white-space:pre-wrap;font-family:var(--font-mono);font-size:12px;color:var(--text);padding:12px;overflow-y:auto;max-height:400px;"></pre>
+      </div>
+    </div>
+
     <!-- Render tab: full-project render trigger (asset_timeline-driven per-scene renders + concat). Per-scene preview lives in Timeline tab. -->
     <div class="tools-content hidden" id="tools-render" data-pane="render">
       <div class="prompts-toolbar">
@@ -1930,11 +2058,6 @@
     <button class="btn primary" id="render-btn" disabled>Render</button>
   </div>
 </footer>
-
-<div class="toast hidden" id="undo-toast">
-  <span id="undo-toast-msg">Unapproved.</span>
-  <button class="btn" id="undo-btn">Undo</button>
-</div>
 
 <script>
 'use strict';
@@ -1955,8 +2078,6 @@ const state = {
   promptsDirty: false,     // user edited but not saved
   selectedScene: null,     // currently focused scene for re-generate
   v3Index: 0,              // current scene index (clamped on render)
-  undoTimeout: null,       // setTimeout handle for undo toast
-  undoSceneId: null,       // scene id for undo operation
   promptsStatus: 'default', // 'default' | 'custom' | 'unsaved'
 };
 
@@ -2163,8 +2284,9 @@ async function loadProject(slug) {
 
     state.scenes = data.storyboard?.scenes || [];
 
-    // v3: start at first scene when (re)loading a project
-    state.v3Index = 0;
+    // v3: restore previous scene index, clamped to valid range
+    var prevIndex = state.v3Index;
+    state.v3Index = Math.max(0, Math.min(prevIndex, state.scenes.length - 1));
 
     // Script — show best available artifact, but never clobber unsaved edits.
     const editor = $('script-editor');
@@ -2183,6 +2305,7 @@ async function loadProject(slug) {
     // Side panels: load prompts + exports for this project
     await loadPrompts();
     await loadExports();
+    await loadResources();
   } catch (err) {
     setStatus(err.message, 'error');
     console.error('loadProject failed:', err);
@@ -2233,7 +2356,26 @@ async function generateVersion(id) {
   setRenderMsg(`Generating scene ${id}…`);
   try {
     const promptEl = $('images-prompt');
-    const prompt = promptEl ? promptEl.value.trim() : '';
+    const custom = promptEl ? promptEl.value.trim() : '';
+
+    // Assemble full prompt from toggles
+    var parts = [];
+    var prompts = state.prompts || {};
+    var img = prompts.image || {};
+    if (document.getElementById('toggle-beacon')?.checked && img.beacon_world) {
+      parts.push('[BEACON_WORLD]\n' + img.beacon_world);
+    }
+    if (document.getElementById('toggle-style')?.checked && img.video_style) {
+      parts.push('[IMAGE_STYLE]\n' + img.video_style);
+    }
+    if (document.getElementById('toggle-scene')?.checked) {
+      var sc = state.scenes[state.v3Index];
+      var scText = (sc && sc.text) ? sc.text : '';
+      if (scText) parts.push('[SCENE]\n' + scText);
+    }
+    if (custom) parts.push('[CUSTOM]\n' + custom);
+    const prompt = parts.join('\n\n') || custom || undefined;
+
     await api(`/api/project/${encodeURIComponent(state.slug)}/storyboard/${id}/image`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2434,6 +2576,16 @@ async function triggerRender() {
 
 function wireEvents() {
   $('project-select').addEventListener('change', (e) => loadProject(e.target.value));
+  $('new-project-btn').addEventListener('click', async () => {
+    var slug = prompt('Project name (lowercase, hyphens):');
+    if (!slug) return;
+    try {
+      var r = await api('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slug }) });
+      await init();
+      $('project-select').value = slug;
+      await loadProject(slug);
+    } catch (e) { setRenderMsg(e.message || 'Failed to create project', true); }
+  });
   $('save-script-btn').addEventListener('click', saveScript);
   $('render-btn').addEventListener('click', triggerRender);
   $('script-editor').addEventListener('input', (e) => {
@@ -2453,6 +2605,27 @@ function wireEvents() {
 
   // Exports pane
   $('exports-refresh-btn').addEventListener('click', () => loadExports());
+
+  // Resources pane
+  $('resources-refresh-btn').addEventListener('click', () => loadResources());
+  $('resources-preview-close').addEventListener('click', () => { $('resources-preview').style.display = 'none'; });
+
+  // Resources drop zone
+  const dropZone = $('resources-drop-zone');
+  const uploadInput = $('resources-upload-input');
+
+  dropZone.addEventListener('click', () => uploadInput.click());
+  dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    handleResourceFiles(e.dataTransfer.files);
+  });
+  uploadInput.addEventListener('change', () => handleResourceFiles(uploadInput.files));
+
+  // Script generation button
+  $('script-gen-btn').addEventListener('click', generateScript);
 
   // Render tab (TOOLS pane) — asset_timeline full render entry point
   $('tools-render-btn').addEventListener('click', triggerRender);
@@ -2813,24 +2986,9 @@ function wireV3Events() {
     setTimeout(() => { genThrottle = false; }, 2000);
   });
 
-  // Images tab: Unapprove button
-  $('images-unapprove-btn').addEventListener('click', async () => {
-    const scene = state.scenes[state.v3Index];
-    if (!scene) return;
-    try {
-      const data = await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene.id + '/unapprove', { method: 'POST' });
-      showUndoToast(scene.id, data.prev_approved_path);
-      await loadProject(state.slug);
-    } catch (err) {
-      setRenderMsg(err.message, true);
-    }
-  });
-
   // Images tab: Prompt box — mark as user-edited on input
   $('images-prompt').addEventListener('input', () => {
     $('images-prompt').dataset.userEdited = 'true';
-    const lbl = $('images-prompt-label');
-    if (lbl) lbl.textContent = 'Custom prompt';
   });
 
   // Images tab: Upload — drag-and-drop + click-to-browse
@@ -2915,7 +3073,6 @@ function renderV3Assets() {
   const badgeEl = $('images-approve-badge');
   const promptEl = $('images-prompt');
   const genBtn = $('images-gen-btn');
-  const unapproveBtn = $('images-unapprove-btn');
   const gallery = $('images-gallery');
   const preview = $('images-preview');
   const uploadZone = $('images-upload-zone');
@@ -2961,7 +3118,6 @@ function renderV3Assets() {
     genBtn.innerHTML = '✨ Generate';
     genBtn.disabled = false;
   }
-  if (unapproveBtn) unapproveBtn.disabled = !hasApproved;
 
   // Upload collapse default + supplemental wiring (for zone when expanded; wiring compat for dummy btn)
   const collapsedBar = $('images-upload-collapsed');
@@ -2995,15 +3151,7 @@ function renderV3Assets() {
 
   // Gallery / empty
   if (!versions.length) {
-    gallery.innerHTML = '<div class="images-empty">' +
-      '<div class="empty-icon">🖼️</div>' +
-      '<div class="empty-title">No images yet</div>' +
-      '<div class="empty-sub">Generate your first image or upload one</div>' +
-      '<div class="empty-actions">' +
-        '<button class="btn primary" onclick="document.getElementById(\'images-gen-btn\').click();return false;">✨ Generate</button>' +
-        '<button class="btn" onclick="document.getElementById(\'images-upload-input\').click();return false;">📁 Upload</button>' +
-      '</div>' +
-      '</div>';
+    gallery.innerHTML = '<div class="images-empty" style="padding:8px 12px;font-size:12px;color:var(--text-muted);">No images yet — generate your first one below</div>';
     preview.style.display = 'none';
   } else {
     renderV3AssetsGallery(scene);
@@ -3039,15 +3187,64 @@ function renderV3AssetsGallery(scene) {
       '</div>';
   }).join('');
 
-  // Wire thumbnail clicks (preview select + highlight; delegation also does approve/nav)
+  // Wire thumbnail clicks — multi-select (Ctrl=toggle, Shift=range, plain=single)
   gallery.querySelectorAll('.images-thumb').forEach(function(thumb, i) {
-    thumb.addEventListener('click', function() {
+    thumb.addEventListener('click', function(e) {
+      if (e.ctrlKey || e.metaKey) {
+        // Toggle in multi-select
+        var pos = _multiSel.indexOf(i);
+        if (pos >= 0) _multiSel.splice(pos, 1); else _multiSel.push(i);
+        _lastClickIdx = i;
+      } else if (e.shiftKey && _multiSel.length) {
+        // Range select from last
+        var lo = Math.min(_lastClickIdx, i), hi = Math.max(_lastClickIdx, i);
+        _multiSel = [];
+        for (var j = lo; j <= hi; j++) _multiSel.push(j);
+      } else {
+        // Single select — clear multi
+        _multiSel = [i];
+        _lastClickIdx = i;
+      }
       _selectedImageIndex = i;
       renderV3AssetsPreview(scene);
-      gallery.querySelectorAll('.images-thumb').forEach(function(t) { t.classList.remove('selected'); });
-      thumb.classList.add('selected');
+      // Load prompt
+      var v = versions[i];
+      var promptEl = document.getElementById('images-prompt');
+      if (promptEl && v && v.prompt) { promptEl.value = v.prompt; promptEl.dataset.userEdited = 'false'; }
+      // Highlight
+      gallery.querySelectorAll('.images-thumb').forEach(function(t, j) {
+        t.classList.toggle('selected', _multiSel.indexOf(j) >= 0);
+      });
+      // Show/hide delete selected button
+      var delBtn = document.getElementById('images-delete-sel-btn');
+      if (delBtn) delBtn.style.display = _multiSel.length >= 1 ? '' : 'none';
     });
   });
+
+  // Delete selected button — wire fresh each render
+  var delSelBtn = document.getElementById('images-delete-sel-btn');
+  if (delSelBtn) {
+    delSelBtn.onclick = async function() {
+      var scene2 = state.scenes[state.v3Index];
+      if (!scene2 || !_multiSel.length) return;
+      var versions2 = (scene2.asset_timeline || []).filter(function(a) { return a.type === 'still' && a.path; });
+      var pathsToRemove = _multiSel.map(function(j) { return (versions2[j] || {}).path; }).filter(Boolean);
+      if (!pathsToRemove.length) return;
+      var tl = JSON.parse(JSON.stringify(scene2.asset_timeline || []));
+      tl = tl.filter(function(a) { return pathsToRemove.indexOf(a.path) < 0; });
+      try {
+        _selectedImageIndex = 0;
+        // Reset multi-select
+        gallery.querySelectorAll('.images-thumb').forEach(function(t) { t.classList.remove('selected'); });
+        delSelBtn.style.display = 'none';
+        await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene2.id + '/timeline', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ asset_timeline: tl })
+        });
+        await loadProject(state.slug);
+      } catch (e) { setRenderMsg('Delete failed: ' + (e.message || e), true); }
+    };
+  }
 
   // Wire × remove buttons (stop prop to avoid approve; remove from asset_timeline via PUT then reload)
   gallery.querySelectorAll('.thumb-remove').forEach(function(btn) {
@@ -3065,6 +3262,7 @@ function renderV3AssetsGallery(scene) {
       tl.splice(rmIdx, 1);
       try {
         if (idx === _selectedImageIndex) _selectedImageIndex = 0;
+        _multiSel = [];
         await api('/api/project/' + encodeURIComponent(state.slug) + '/storyboard/' + scene2.id + '/timeline', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -3142,33 +3340,6 @@ async function handleImageUpload(file) {
     setRenderMsg('Upload failed: ' + err.message, true);
     statusEl.style.display = 'none';
   }
-}
-
-function showUndoToast(sceneId, prevPath) {
-  if (state.undoTimeout) {
-    clearTimeout(state.undoTimeout);
-    state.undoTimeout = null;
-  }
-  state.undoSceneId = sceneId;
-  let msg = 'Unapproved.';
-  if (prevPath) {
-    const parts = prevPath.split('/');
-    msg = 'Unapproved ' + parts[parts.length - 1] + '.';
-  }
-  $('undo-toast-msg').textContent = msg;
-  $('undo-toast').classList.remove('hidden');
-  state.undoTimeout = setTimeout(() => {
-    hideUndoToast();
-  }, 5000);
-}
-
-function hideUndoToast() {
-  $('undo-toast').classList.add('hidden');
-  if (state.undoTimeout) {
-    clearTimeout(state.undoTimeout);
-    state.undoTimeout = null;
-  }
-  state.undoSceneId = null;
 }
 
 // ── Captions tab (v1.1.3) ──
@@ -3388,7 +3559,7 @@ function renderV3VideoClips() {
       if (hasP) {
         html += '<span class="prompt-indicator" title="Has saved prompt">📋</span>';
       }
-      html += '<div class="thumb">▶</div>';
+      html += '<div class="thumb" data-vc-path="' + p + '">▶</div>';
       html += '<div class="info">' + dur + 's · ' + ar + '<br><span style="font-size:9px;opacity:.7;">' + fname + '</span></div>';
       html += '<div style="padding:3px 4px 4px;display:flex;gap:4px;border-top:1px solid var(--border);">';
       html += '<button class="btn vc-action" style="flex:1;font-size:9px;padding:1px 3px;" data-action="vc-add-timeline" data-vc-path="' + p + '">Add to Timeline</button>';
@@ -3413,9 +3584,22 @@ function renderV3VideoClips() {
   container.addEventListener('click', function(e) {
     var btn = e.target.closest('.vc-action');
     if (!btn) {
-      // Card click → load prompt
+      // Card click → toggle video preview or load prompt
       var card = e.target.closest('.video-clip-card');
       if (card) {
+        var thumb = e.target.closest('.thumb');
+        if (thumb) {
+          // Toggle video preview
+          var vpath = thumb.getAttribute('data-vc-path');
+          var existingVideo = thumb.querySelector('video');
+          if (existingVideo) {
+            existingVideo.remove();
+            thumb.innerHTML = '▶';
+          } else {
+            thumb.innerHTML = '<video src="' + escHtml(imageUrl(vpath)) + '" controls autoplay style="width:100%;height:100%;object-fit:contain;background:#000;"></video>';
+          }
+          return;
+        }
         var pr = card.getAttribute('data-prompt');
         var ta = document.getElementById('v3-vc-prompt');
         var lab = document.getElementById('v3-vc-prompt-label');
@@ -3529,6 +3713,8 @@ let _timelineDirty = false;  // T7: used by previewRender to decide whether to p
 let _saveTimelineTimer = null;
 let _selectedAssetIndex = null;
 let _selectedImageIndex = 0;
+let _multiSel = [];
+let _lastClickIdx = 0;
 let _lastAssetsSceneId = null;
 let _currentPxPerSec = 40;
 let _lastTimelineSceneId = null;
@@ -3816,7 +4002,9 @@ async function refreshTimelineFromServer(sceneId) {
       if (!_timelineDirty) {
         _timelineAssets = JSON.parse(JSON.stringify(data.asset_timeline));
         _timelineAssets.forEach(normalizeAsset);
-        _selectedAssetIndex = null;
+        if (_selectedAssetIndex != null && _selectedAssetIndex >= _timelineAssets.length) {
+          _selectedAssetIndex = null;
+        }
         renderV3Timeline();
       }
     }
@@ -4205,8 +4393,12 @@ function startDragTimeline(evt, blockEl, ai, mode, side) {
     handleDragMove(moveEvt);
   }
   function onPointerUp(upEvt) {
+    const ai = _dragState ? _dragState.ai : null;
     cleanupDrag();
-    commitDrag(upEvt);
+    if (ai != null) {
+      markTimelineDirty();
+      renderV3Timeline();
+    }
   }
   function cleanupDrag() {
     document.removeEventListener('pointermove', onPointerMove);
@@ -4286,16 +4478,6 @@ function handleDragMove(moveEvt) {
     const toEl = props.querySelector('[data-prop="time_out"]');
     if (toEl) toEl.textContent = (asset.time_in + asset.duration_secs).toFixed(2);
   }
-}
-
-function commitDrag(upEvt) {
-  if (!_dragState || !_timelineAssets) {
-    _dragState = null;
-    return;
-  }
-  const ai = _dragState.ai;
-  markTimelineDirty();
-  renderV3Timeline();
 }
 
 function renderV3Timeline() {
@@ -4914,6 +5096,145 @@ function initPaneMinimize() {
   });
 }
 
+// ── Resources tab + Script Generation (v4.0) ──
+
+async function loadResources() {
+  if (!state.slug) return;
+  try {
+    const data = await api(`/api/project/${encodeURIComponent(state.slug)}/sources`);
+    $('resources-count').textContent = `${data.sources.length} files`;
+    renderResourcesList(data.sources);
+    renderScriptGenSources(data.sources);
+  } catch (err) {
+    console.error('loadResources failed:', err);
+  }
+}
+
+function fileIcon(ext) {
+  const icons = { '.pdf': '📄', '.md': '📝', '.txt': '📃', '.jpg': '🖼️', '.jpeg': '🖼️', '.png': '🖼️', '.webp': '🖼️' };
+  return icons[ext] || '📎';
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+function renderResourcesList(sources) {
+  const list = $('resources-list');
+  if (!sources.length) {
+    list.innerHTML = '<div class="empty">Upload source files to use for script generation</div>';
+    return;
+  }
+  list.innerHTML = sources.map(s => `
+    <div class="resource-item">
+      <span class="res-icon">${fileIcon(s.ext)}</span>
+      <span class="res-name" title="${escHtml(s.filename)}">${escHtml(s.filename)}</span>
+      <span class="res-size">${formatSize(s.size)}</span>
+      <span class="res-actions">
+        <button onclick="previewResource('${escHtml(s.filename).replace(/'/g, "\\'")}')">👁</button>
+        <button class="res-delete" onclick="deleteResource('${escHtml(s.filename).replace(/'/g, "\\'")}')">🗑</button>
+      </span>
+    </div>
+  `).join('');
+}
+
+function renderScriptGenSources(sources) {
+  const container = $('script-gen-sources');
+  if (!sources.length) {
+    container.innerHTML = '<div class="empty" style="font-size:11px;padding:8px;">Upload sources in the Resources tab first</div>';
+    $('script-gen-section').style.display = state.slug ? '' : 'none';
+    return;
+  }
+  $('script-gen-section').style.display = '';
+  container.innerHTML = sources.map(s => `
+    <label>
+      <input type="checkbox" value="${escHtml(s.filename)}" class="script-gen-check">
+      ${fileIcon(s.ext)} ${escHtml(s.filename)}
+    </label>
+  `).join('');
+}
+
+async function handleResourceFiles(files) {
+  if (!state.slug) return alert('Select a project first');
+  for (const file of files) {
+    const form = new FormData();
+    form.append('file', file);
+    try {
+      await api(`/api/project/${encodeURIComponent(state.slug)}/sources`, {
+        method: 'POST',
+        body: form,
+      });
+    } catch (err) {
+      console.error('Upload failed:', file.name, err);
+    }
+  }
+  loadResources();
+}
+
+async function previewResource(filename) {
+  try {
+    const data = await api(`/api/project/${encodeURIComponent(state.slug)}/sources/${encodeURIComponent(filename)}`);
+    $('resources-preview-title').textContent = filename;
+    $('resources-preview-content').textContent = data.content || '(binary/unsupported content)';
+    $('resources-preview').style.display = '';
+  } catch (err) {
+    console.error('Preview failed:', err);
+  }
+}
+
+async function deleteResource(filename) {
+  if (!confirm(`Delete ${filename}?`)) return;
+  try {
+    await api(`/api/project/${encodeURIComponent(state.slug)}/sources/${encodeURIComponent(filename)}`, {
+      method: 'DELETE',
+    });
+    loadResources();
+  } catch (err) {
+    console.error('Delete failed:', err);
+  }
+}
+
+// ── Script Generation ──
+
+async function generateScript() {
+  if (!state.slug) return;
+  const checks = document.querySelectorAll('.script-gen-check:checked');
+  if (!checks.length) return alert('Select at least one source file');
+  
+  const sources = Array.from(checks).map(c => c.value);
+  const instructions = $('script-gen-instructions').value.trim();
+  
+  $('script-gen-btn').disabled = true;
+  $('script-gen-status').style.display = '';
+  $('script-gen-status').textContent = 'Generating script...';
+  
+  try {
+    const data = await api(`/api/project/${encodeURIComponent(state.slug)}/generate-script`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sources, instructions }),
+    });
+    
+    if (data.script) {
+      // Show confirmation before replacing
+      if (confirm('Replace current script with AI-generated script?')) {
+        $('script-editor').value = data.script;
+        // Mark dirty to enable save
+        $('save-script-btn').disabled = false;
+      }
+      $('script-gen-status').textContent = '✅ Script generated!';
+    }
+  } catch (err) {
+    $('script-gen-status').textContent = '❌ ' + err.message;
+    console.error('generateScript failed:', err);
+  } finally {
+    $('script-gen-btn').disabled = false;
+    setTimeout(() => { $('script-gen-status').style.display = 'none'; }, 3000);
+  }
+}
+
 // ── Init ──
 
 async function init() {
@@ -5204,51 +5525,33 @@ async function init() {
     return versions[idx] ? versions[idx].path : null;
   };
 
-  // Edit button click → show edit panel
-  $('images-edit-btn').addEventListener('click', (e) => {
-    e.stopPropagation();
-    const panel = $('images-edit-panel');
-    panel.style.display = panel.style.display === 'flex' ? 'none' : 'flex';
-    if (panel.style.display === 'flex') $('images-edit-prompt').focus();
-  });
-
-  // Cancel button
-  $('images-edit-cancel-btn').addEventListener('click', () => {
-    $('images-edit-panel').style.display = 'none';
-    $('images-edit-prompt').value = '';
-  });
-
-  // Apply Edit button
-  $('images-edit-apply-btn').addEventListener('click', async () => {
-    const prompt = $('images-edit-prompt').value.trim();
-    if (!prompt) { setRenderMsg('Enter an edit prompt', true); return; }
+  // Edit button — uses shared prompt, calls /image/edit
+  $('images-edit-btn2').addEventListener('click', async () => {
     const sceneId = _editSceneId();
     const sourcePath = _editSourcePath();
+    const prompt = $('images-prompt').value.trim();
     if (!sceneId || !sourcePath) { setRenderMsg('No image selected', true); return; }
+    if (!prompt) { setRenderMsg('Enter an edit prompt', true); return; }
 
-    const btn = $('images-edit-apply-btn');
+    const btn = $('images-edit-btn2');
     const oldHTML = btn.innerHTML;
     btn.innerHTML = '<span class=\"spinner\"></span> Editing…';
     btn.disabled = true;
-    $('images-edit-cancel-btn').disabled = true;
     setRenderMsg('Editing image…');
 
     try {
-      const result = await api(`/api/project/${encodeURIComponent(state.slug)}/storyboard/${sceneId}/image/edit`, {
+      await api(`/api/project/${encodeURIComponent(state.slug)}/storyboard/${sceneId}/image/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source_image_path: sourcePath, prompt }),
       });
       setRenderMsg('Edit complete ✓');
-      $('images-edit-panel').style.display = 'none';
-      $('images-edit-prompt').value = '';
       await loadProject(state.slug);
     } catch (err) {
       setRenderMsg('Edit failed: ' + (err.message || err), true);
     } finally {
       btn.innerHTML = oldHTML;
       btn.disabled = false;
-      $('images-edit-cancel-btn').disabled = false;
     }
   });
 

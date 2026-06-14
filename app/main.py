@@ -52,7 +52,7 @@ from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
 WORKSPACE = Path(__file__).resolve().parent.parent
 PROJECTS = WORKSPACE / "projects"
@@ -192,6 +192,23 @@ async def list_projects():
         d.name for d in PROJECTS.iterdir()
         if d.is_dir() and not d.name.startswith(("_", "."))
     )
+
+
+@app.post("/api/projects")
+async def create_project(body: dict = None):
+    """Create a new project from templates."""
+    slug = (body or {}).get("slug", "").strip()
+    if not slug or not re.match(r'^[a-z0-9][a-z0-9-]*$', slug):
+        raise HTTPException(400, "Invalid slug: use lowercase letters, numbers, and hyphens")
+    proj = PROJECTS / slug
+    if proj.exists():
+        raise HTTPException(409, f"Project '{slug}' already exists")
+    proj.mkdir(parents=True)
+    for sub in ("scenes", "audio", "renders", "exports", "sources"):
+        (proj / sub).mkdir()
+    (proj / "storyboard.json").write_text(json.dumps({"project": slug, "scenes": []}, indent=2))
+    (proj / "SPINE.md").write_text(f"# SPINE — {slug}\n\n> Project: `{slug}` · Narrative spine.\n")
+    return {"ok": True, "slug": slug}
 
 
 @app.get("/api/project/{slug}")
@@ -432,7 +449,7 @@ def _generate_image_sync(prompt: str, output_dir: str) -> dict:
     return {"ok": ok, "image_path" if ok else "error": result}
 
 
-def _generate_video_sync(prompt: str, output_dir: str, image_path: str | None, duration: float, aspect: str, resolution: str) -> dict:
+def _generate_video_sync(prompt: str, output_dir: str, image_path: str | None, duration: float, aspect: str, resolution: str, slug: str = "") -> dict:
     """Synchronous video wrapper — called from thread pool."""
     import os as _os, sys as _sys
     _sys.path.insert(0, str(Path(_os.environ.get('HERMES_HOME', _os.path.expanduser('~/.hermes'))) / 'hermes-agent'))
@@ -441,7 +458,7 @@ def _generate_video_sync(prompt: str, output_dir: str, image_path: str | None, d
     spec = importlib.util.spec_from_file_location("gen_bridge", bridge)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    ok, result = mod.generate_video(prompt, output_dir, image_path, duration, aspect, resolution)
+    ok, result = mod.generate_video(prompt, output_dir, image_path, duration, aspect, resolution, slug)
     return {"ok": ok, "video_path" if ok else "error": result}
 
 
@@ -514,10 +531,11 @@ async def request_scene_video(slug: str, scene_id: int, body: VideoGenRequest):
             _generate_video_sync,
             prompt,
             str(project_dir(slug) / "scenes"),
-            body.reference_image_paths[0] if body.reference_image_paths else None,
+            (project_dir(slug) / body.reference_image_paths[0]).as_posix() if body.reference_image_paths else None,
             body.duration_secs,
             body.aspect_ratio,
             body.resolution,
+            slug,
         )
     except Exception as e:
         await sse_notify(slug, f"video-failed:{scene_id}")
@@ -1261,6 +1279,182 @@ async def add_scene_version(slug: str, scene_id: int, file: UploadFile = File(..
     save_storyboard(sb_path, sb)
     await sse_notify(slug, f"{type}-registered:{scene_id}")
     return {"ok": True, "path": rel_path}
+
+
+# ---------------------------------------------------------------------------
+# Sources (Resources tab) + script generation (v4.0)
+# ---------------------------------------------------------------------------
+
+def _generate_script_sync(sources_text: str, instructions: str) -> dict:
+    """Synchronous wrapper for generate_script — called from thread pool."""
+    import os as _os, sys as _sys
+    _sys.path.insert(0, str(Path(_os.environ.get('HERMES_HOME', _os.path.expanduser('~/.hermes'))) / 'hermes-agent'))
+    import importlib.util
+    bridge = Path(__file__).resolve().parent.parent / "lib" / "gen_bridge.py"
+    spec = importlib.util.spec_from_file_location("gen_bridge", bridge)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    ok, result = mod.generate_script(sources_text, instructions)
+    return {"ok": ok, "script" if ok else "error": result}
+
+
+@app.post("/api/project/{slug}/sources")
+async def upload_source(slug: str, file: UploadFile = File(...)):
+    """Upload a file to projects/{slug}/sources/. Handle collisions by appending -N before ext."""
+    slug = slug.strip()
+    proj = project_dir(slug)
+    sources_dir = proj / "sources"
+    sources_dir.mkdir(parents=True, exist_ok=True)
+
+    if not file or not file.filename:
+        raise HTTPException(400, "file is required")
+
+    orig_name = Path(file.filename).name
+    target = sources_dir / orig_name
+    saved_name = orig_name
+    if target.exists():
+        stem = Path(orig_name).stem
+        suffix = Path(orig_name).suffix
+        i = 1
+        while target.exists():
+            saved_name = f"{stem}-{i}{suffix}"
+            target = sources_dir / saved_name
+            i += 1
+
+    content = await file.read()
+    target.write_bytes(content)
+    file_size = len(content)
+    return {"ok": True, "filename": saved_name, "size": file_size}
+
+
+@app.get("/api/project/{slug}/sources")
+async def list_sources(slug: str):
+    """List files in sources/ dir, newest first by mtime."""
+    slug = slug.strip()
+    base = project_dir(slug) / "sources"
+    base.mkdir(parents=True, exist_ok=True)
+    items = []
+    for f in base.iterdir():
+        if f.is_file():
+            stat = f.stat()
+            ext = f.suffix.lower()
+            items.append({
+                "filename": f.name,
+                "size": stat.st_size,
+                "mtime": stat.st_mtime,
+                "ext": ext,
+            })
+    items.sort(key=lambda x: x["mtime"], reverse=True)
+    return {"sources": items}
+
+
+@app.get("/api/project/{slug}/sources/{filename}")
+async def read_source(slug: str, filename: str):
+    """Read source file content. Text for .md/.txt, fitz+text or raw for .pdf, url for images, raw for others."""
+    slug = slug.strip()
+    proj = project_dir(slug)
+    safe_name = Path(filename).name
+    if ".." in safe_name or "/" in safe_name or "\\" in safe_name:
+        raise HTTPException(400, "Invalid filename")
+    path = proj / "sources" / safe_name
+    if not path.exists() or not path.is_file():
+        raise HTTPException(404, "Source file not found")
+
+    ext = path.suffix.lower()
+    if ext in (".txt", ".md"):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            text = path.read_text(encoding="latin-1", errors="replace")
+        return {"ok": True, "filename": safe_name, "content": text}
+
+    if ext == ".pdf":
+        try:
+            import fitz
+            doc = fitz.open(str(path))
+            text = "".join(page.get_text() for page in doc)
+            doc.close()
+            return {"ok": True, "filename": safe_name, "content": text}
+        except Exception:
+            # fallback
+            raw = path.read_bytes()
+            text = raw.decode("latin-1", errors="replace")
+            return {"ok": True, "filename": safe_name, "content": text, "pdf_raw": True}
+
+    if ext in (".jpg", ".jpeg", ".png", ".webp"):
+        url = f"/projects/{slug}/sources/{safe_name}"
+        return {"ok": True, "filename": safe_name, "type": "image", "url": url}
+
+    # other types: try text, else latin1
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        raw = path.read_bytes()
+        text = raw.decode("latin-1", errors="replace")
+    return {"ok": True, "filename": safe_name, "content": text}
+
+
+@app.delete("/api/project/{slug}/sources/{filename}")
+async def delete_source(slug: str, filename: str):
+    """Delete a source file. Reject path escape."""
+    slug = slug.strip()
+    proj = project_dir(slug)
+    safe_name = Path(filename).name
+    if ".." in safe_name or "/" in safe_name or "\\" in safe_name:
+        raise HTTPException(400, "Invalid filename")
+    path = proj / "sources" / safe_name
+    if not path.exists():
+        raise HTTPException(404, "Source file not found")
+    path.unlink()
+    return {"ok": True}
+
+
+@app.post("/api/project/{slug}/generate-script")
+async def generate_script_endpoint(slug: str, body: dict = None):
+    """Generate narration script via xAI chat from selected sources + instructions.
+    Concat sources, run generate_script via thread pool, notify SSE.
+    """
+    slug = slug.strip()
+    project_dir(slug)  # validate + ensure exists
+
+    sources_list = (body or {}).get("sources", []) or []
+    instructions = (body or {}).get("instructions", "") or ""
+
+    if not isinstance(sources_list, list) or len(sources_list) == 0:
+        raise HTTPException(400, "sources must be a non-empty list of filenames")
+
+    base = project_dir(slug) / "sources"
+    parts = []
+    for fn in sources_list:
+        safe = Path(str(fn)).name
+        if ".." in safe or "/" in safe or "\\" in safe:
+            raise HTTPException(400, f"Invalid source filename: {fn}")
+        p = base / safe
+        if not p.exists():
+            raise HTTPException(404, f"Source not found: {safe}")
+        try:
+            content = p.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            content = p.read_bytes().decode("latin-1", errors="replace")
+        parts.append(f"=== {safe} ===\n{content}\n\n")
+    sources_text = "".join(parts)
+
+    await sse_notify(slug, "script-generating")
+
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _generate_script_sync, sources_text, instructions)
+    except Exception as e:
+        await sse_notify(slug, "script-failed")
+        raise HTTPException(500, f"Script generation failed: {e}")
+
+    if not result.get("ok"):
+        await sse_notify(slug, "script-failed")
+        raise HTTPException(500, result.get("error", "Unknown script error"))
+
+    script_text = result.get("script", "")
+    await sse_notify(slug, "script-generated")
+    return {"ok": True, "script": script_text}
 
 
 # ---------------------------------------------------------------------------

@@ -36,7 +36,7 @@ def generate_image(prompt, output_dir):
 
 # ── Video ──
 
-def generate_video(prompt, output_dir, image_path=None, duration=8, aspect_ratio="16:9", resolution="720p"):
+def generate_video(prompt, output_dir, image_path=None, duration=8, aspect_ratio="16:9", resolution="720p", slug=""):
     """
     POST /v1/videos/generations → poll GET /v1/videos/{id} until status="done".
     Official docs: status="done", video.url for download.
@@ -50,13 +50,20 @@ def generate_video(prompt, output_dir, image_path=None, duration=8, aspect_ratio
         "resolution": resolution,
     }
     if image_path:
-        # Read image as base64 data URL
-        import base64
-        img_data = Path(image_path).read_bytes()
-        b64 = base64.b64encode(img_data).decode()
-        ext = Path(image_path).suffix.lower().lstrip('.')
-        mime = {'jpg': 'jpeg', 'jpeg': 'jpeg', 'png': 'png', 'webp': 'webp'}.get(ext, 'jpeg')
-        body["image"] = f"data:image/{mime};base64,{b64}"
+        # Upload to catbox.moe for a temporary public URL (direct raw file access)
+        import subprocess
+        try:
+            r = subprocess.run(
+                ["curl", "-sS", "-F", "reqtype=fileupload", "-F", f"fileToUpload=@{image_path}",
+                 "https://catbox.moe/user/api.php"],
+                capture_output=True, text=True, timeout=30
+            )
+            public_url = r.stdout.strip()
+            if r.returncode != 0 or not public_url.startswith("http"):
+                return False, f"Upload to catbox.moe failed: {r.stderr or public_url}"
+            body["image"] = {"url": public_url, "type": "image_url"}
+        except Exception as e:
+            return False, f"Upload to catbox.moe error: {e}"
 
     r = requests.post(f"{BASE}/videos/generations", json=body, headers=_headers(), timeout=30)
     if r.status_code != 200:
@@ -245,7 +252,7 @@ def edit_image(source_path, prompt, output_dir, slug):
     r = requests.post(f"{BASE}/images/edits", json={
         "model": "grok-imagine-image-quality",
         "prompt": prompt,
-        "image": [{"url": public_url, "type": "image_url"}]
+        "image": {"url": public_url, "type": "image_url"}
     }, headers=_headers(), timeout=60)
     if r.status_code != 200:
         return {"ok": False, "error": f"xAI edit API {r.status_code}: {r.text[:200]}"}
@@ -272,6 +279,44 @@ def edit_image(source_path, prompt, output_dir, slug):
         "height": None,
         "revised_prompt": data0.get("revised_prompt", "")
     }
+
+
+def generate_script(sources_text, instructions):
+    """Call xAI chat completions to generate a video narration script.
+    Uses the OAuth token from auth.json. Returns (ok, script_text) tuple.
+    """
+    import json, requests, sys, os
+    from pathlib import Path
+    
+    token = _token()  # reuse existing _token() function
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    
+    system_prompt = (
+        "You are a video script writer. Given these sources and instructions, "
+        "produce a narration script in markdown format with ## Scene N — Title (time) headers."
+    )
+    
+    user_message = f"SOURCES:\n{sources_text}\n\nINSTRUCTIONS:\n{instructions}"
+    
+    body = {
+        "model": "grok-3",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message}
+        ],
+        "temperature": 0.7,
+    }
+    
+    r = requests.post("https://api.x.ai/v1/chat/completions", json=body, headers=headers, timeout=120)
+    if r.status_code != 200:
+        return False, f"xAI chat API {r.status_code}: {r.text[:300]}"
+    
+    result = r.json()
+    script = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+    if not script:
+        return False, f"No content in response: {json.dumps(result)[:200]}"
+    
+    return True, script
 
 
 # ── CLI ──
