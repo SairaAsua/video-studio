@@ -336,7 +336,7 @@ def _generate_image_sync(prompt: str, output_dir: str) -> dict:
     return {"ok": ok, "image_path" if ok else "error": result}
 
 
-def _generate_video_sync(prompt: str, output_dir: str, ref_paths: list, duration: float, aspect: str, resolution: str) -> dict:
+def _generate_video_sync(prompt: str, output_dir: str, image_path: str | None, duration: float, aspect: str, resolution: str) -> dict:
     """Synchronous video wrapper — called from thread pool."""
     import os as _os, sys as _sys
     _sys.path.insert(0, str(Path(_os.environ.get('HERMES_HOME', _os.path.expanduser('~/.hermes'))) / 'hermes-agent'))
@@ -345,7 +345,7 @@ def _generate_video_sync(prompt: str, output_dir: str, ref_paths: list, duration
     spec = importlib.util.spec_from_file_location("gen_bridge", bridge)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    ok, result = mod.generate_video(prompt, output_dir, ref_paths, duration, aspect, resolution)
+    ok, result = mod.generate_video(prompt, output_dir, image_path, duration, aspect, resolution)
     return {"ok": ok, "video_path" if ok else "error": result}
 
 
@@ -379,7 +379,7 @@ async def request_scene_video(slug: str, scene_id: int, body: VideoGenRequest):
             _generate_video_sync,
             prompt,
             str(project_dir(slug) / "scenes"),
-            body.reference_image_paths,
+            body.reference_image_paths[0] if body.reference_image_paths else None,
             body.duration_secs,
             body.aspect_ratio,
             body.resolution,
