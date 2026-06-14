@@ -1006,6 +1006,28 @@
     border-top: 1px solid var(--border);
   }
 
+  .timeline-bin-caption {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    cursor: grab;
+    font-size: 11px;
+  }
+  .timeline-bin-section-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 8px;
+    margin-bottom: 4px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+  }
+
   /* ── Script pane resize handle ── */
   .pane-resize-handle {
     position: absolute;
@@ -2863,16 +2885,6 @@ function buildTimelineBin(currentAssets, sceneId) {
     });
   }
 
-  const curScene = state.scenes[state.v3Index];
-  const hasCaptions = !!(curScene && Array.isArray(curScene.caption_phrases) && curScene.caption_phrases.length > 0);
-
-  if (!allAssets.length) {
-    if (!hasCaptions) {
-      return '<div class="timeline-bin"><div class="timeline-bin-label">Bin — 0 assets from scene ' + (sid || '?') + '</div><div style="padding:6px 8px;font-size:10px;color:var(--text-muted);">No assets in this scene</div></div>';
-    }
-    // fall through to include captions section
-  }
-
   let stillCount = 0, videoCount = 0;
   allAssets.forEach(a => { if (a.type === 'video') videoCount++; else stillCount++; });
 
@@ -2895,29 +2907,27 @@ function buildTimelineBin(currentAssets, sceneId) {
       '</div>';
   }).join('');
 
+  // Captions section
+  const curScene = state.scenes[state.v3Index];
+  const captions = (curScene && curScene.caption_phrases) || [];
+  let captionsHtml = '';
+  if (captions.length) {
+    captionsHtml = '<div class="timeline-bin-section-label">💬 Captions (' + captions.length + ' phrases from current scene)</div>';
+    for (let ci = 0; ci < captions.length; ci++) {
+      const p = captions[ci];
+      const text = escHtml((p.text || '').length > 30 ? (p.text || '').substring(0, 30) + '…' : (p.text || ''));
+      captionsHtml += '<div class="timeline-bin-caption" draggable="true" data-phrase-idx="' + ci + '">💬 ' + text + ' ' + (p.time_in || 0) + '→' + (p.time_out || 0) + '</div>';
+    }
+  }
+
   let binHtml = '' +
     '<div class="timeline-bin">' +
       (allAssets.length
         ? '<div class="timeline-bin-label">Bin — ' + (stillCount + videoCount) + ' assets from scene ' + sid + '</div>' +
           '<div class="timeline-bin-items">' + itemsHtml + '</div>'
-        : '<div class="timeline-bin-label">Bin — 0 assets from scene ' + (sid || '?') + '</div><div style="padding:6px 8px;font-size:10px;color:var(--text-muted);">No assets in this scene</div>');
-
-  if (hasCaptions) {
-    const N = curScene.caption_phrases.length;
-    binHtml += '<div class="timeline-bin-section-label">💬 Captions (' + N + ' phrases from current scene)</div>';
-    for (let pi = 0; pi < curScene.caption_phrases.length; pi++) {
-      const phrase = curScene.caption_phrases[pi] || {};
-      const txt = (phrase.text ? String(phrase.text).trim() : '');
-      const short = escHtml(txt.length > 30 ? txt.slice(0, 30) + '…' : (txt || '(empty)'));
-      const tin = (phrase.time_in != null ? phrase.time_in : '?');
-      const tout = (phrase.time_out != null ? phrase.time_out : '?');
-      binHtml += '<div class="timeline-bin-caption" draggable="true" data-phrase-idx="' + pi + '" title="' + escHtml(txt || '(empty)') + '">' +
-        '💬 ' + short + ' ' + tin + '→' + tout +
-      '</div>';
-    }
-  }
-
-  binHtml += '</div>';
+        : '<div class="timeline-bin-label">Bin — 0 assets from scene ' + (sid || '?') + '</div><div style="padding:6px 8px;font-size:10px;color:var(--text-muted);">No assets in this scene</div>') +
+      captionsHtml +
+    '</div>';
   return binHtml;
 }
 
@@ -3578,7 +3588,7 @@ function renderV3Timeline() {
     });
   }
 
-  // Wire bin captions for drag-from-bin (append caption phrase to target asset)
+  // Wire bin captions for drag-from-bin
   const binCaptions = container.querySelectorAll('.timeline-bin-caption');
   for (let ci = 0; ci < binCaptions.length; ci++) {
     const capEl = binCaptions[ci];
@@ -3587,11 +3597,7 @@ function renderV3Timeline() {
       const scene = state.scenes[state.v3Index];
       if (!scene || !scene.caption_phrases || !scene.caption_phrases[idx]) return;
       const phrase = scene.caption_phrases[idx];
-      e.dataTransfer.setData('application/json', JSON.stringify({
-        kind: 'caption',
-        phrase: phrase,
-        phraseIdx: Number(idx)
-      }));
+      e.dataTransfer.setData('application/json', JSON.stringify({ kind: 'caption', phrase: phrase, phraseIdx: Number(idx) }));
       e.dataTransfer.effectAllowed = 'copy';
     });
   }
@@ -3633,52 +3639,46 @@ function renderV3Timeline() {
           path = parsed.path || '';
         }
       } catch (ex) {}
+      // Handle caption drop
       if (parsed && parsed.kind === 'caption' && parsed.phrase) {
-        const phrase = parsed.phrase;
         const rect = dropTarget.getBoundingClientRect();
-        let dropX = e.clientX - rect.left - 60;
-        if (dropX < 0) dropX = 0;
-        let dropTimeIn = dropX / _currentPxPerSec;
-        dropTimeIn = computeSnapped(dropTimeIn, _currentPxPerSec, -1);
         const dropY = e.clientY - rect.top;
         const rulerHeight = 28;
         const trackHeight = 52;
         let targetLayer = (dropY < rulerHeight) ? 0 : Math.floor((dropY - rulerHeight) / trackHeight);
         if (targetLayer < 0) targetLayer = 0;
         if (targetLayer > 4) targetLayer = 4;
+        let dropX = e.clientX - rect.left - 60;
+        if (dropX < 0) dropX = 0;
+        let dropTimeIn = dropX / _currentPxPerSec;
+        dropTimeIn = computeSnapped(dropTimeIn, _currentPxPerSec, -1);
+        // Find existing asset on this layer at drop position
         let targetAsset = null;
-        let targetAi = -1;
         for (let ai = 0; ai < _timelineAssets.length; ai++) {
           const a = _timelineAssets[ai];
           if (a.layer !== targetLayer) continue;
           const aEnd = (a.time_in || 0) + (a.duration_secs || 5);
-          if (dropTimeIn >= (a.time_in || 0) && dropTimeIn < aEnd) {
-            targetAsset = a;
-            targetAi = ai;
-            break;
-          }
+          if (dropTimeIn >= (a.time_in || 0) && dropTimeIn < aEnd) { targetAsset = a; break; }
         }
-        snapshotBeforeMutate();
+        const clonedPhrase = Object.assign({}, parsed.phrase);
         if (targetAsset) {
-          const cloned = Object.assign({}, phrase);
+          snapshotBeforeMutate();
           if (!Array.isArray(targetAsset.caption_phrases)) targetAsset.caption_phrases = [];
-          targetAsset.caption_phrases.push(cloned);
-        } else {
-          const clonedPhrase = Object.assign({}, phrase);
-          const newAsset = {
-            type: 'still',
-            path: '__caption__',
-            layer: targetLayer,
-            time_in: Number(dropTimeIn.toFixed(2)),
-            duration_secs: 5.0,
-            approved: false,
-            motion_preset: null,
-            caption_phrases: [clonedPhrase]
-          };
-          normalizeAsset(newAsset);
-          _timelineAssets.push(newAsset);
-          _selectedAssetIndex = _timelineAssets.length - 1;
+          targetAsset.caption_phrases.push(clonedPhrase);
+          markTimelineDirty();
+          renderV3Timeline();
+          return;
         }
+        // Create new asset with caption
+        snapshotBeforeMutate();
+        const newAsset = {
+          type: 'still', layer: targetLayer, path: '__caption__',
+          time_in: Number(dropTimeIn.toFixed(2)), duration_secs: 5.0,
+          caption_phrases: [clonedPhrase]
+        };
+        normalizeAsset(newAsset);
+        _timelineAssets.push(newAsset);
+        _selectedAssetIndex = _timelineAssets.length - 1;
         markTimelineDirty();
         renderV3Timeline();
         return;
