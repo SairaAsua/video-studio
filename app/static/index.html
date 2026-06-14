@@ -1071,10 +1071,13 @@
     flex-shrink: 0;
     border-left: 1px solid var(--border);
     background: var(--surface);
-    display: flex;
+    display: none;
     flex-direction: column;
     overflow-y: auto;
     font-size: 12px;
+  }
+  .timeline-props.open {
+    display: flex;
   }
   .timeline-props-header {
     padding: 4px 8px;
@@ -2912,7 +2915,7 @@ function buildTimelinePropsHtml() {
   const pathLabel = a.path ? a.path.split('/').pop() : ('asset-' + ai);
   const typeLabel = (a.type === 'video' ? 'Video' : 'Still');
   let html = '' +
-    '<div class="timeline-props" data-ai="' + ai + '">' +
+    '<div class="timeline-props open" data-ai="' + ai + '">' +
       '<div class="timeline-props-header">' +
         '<button class="timeline-props-toggle" data-action="toggle-props-collapse" title="Toggle properties">≡</button>' +
         '<span>Asset ' + ai + ' <span style="color:var(--accent);font-size:10px;">[' + typeLabel + ']</span> — ' + escHtml(pathLabel) + '</span>' +
