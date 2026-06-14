@@ -851,7 +851,7 @@
   #v3-tab-captions.hidden { display: none; }
 
   /* ── Timeline tab ── */
-  #v3-tab-timeline { display: flex; flex-direction: column; padding: 0; }
+  #v3-tab-timeline { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; min-height: 0; padding: 0; }
   #v3-tab-timeline.hidden { display: none; }
 
   .timeline-shell { display: flex; flex-direction: row; height: 100%; }
@@ -909,7 +909,9 @@
 
   /* Tracks container */
   .timeline-tracks {
-    flex: 1; overflow-y: auto; overflow-x: auto; position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto; overflow-x: auto; position: relative;
     background: var(--bg);
   }
   .timeline-tracks-inner {
@@ -1045,8 +1047,9 @@
   }
   .timeline-main {
     flex: 1;
-    overflow-y: auto;
-    overflow-x: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     min-width: 0;
     min-height: 0;
     scrollbar-width: thin;
