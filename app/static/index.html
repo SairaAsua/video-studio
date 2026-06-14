@@ -940,7 +940,7 @@
 
   /* Asset block on track */
   .timeline-block {
-    position: absolute; min-height:44px; top:4px; bottom:4px;
+    position: absolute; min-height: 44px; top: 4px; bottom: 4px;
     background: var(--accent-dim); border: 1px solid var(--accent);
     border-radius: 4px; overflow: hidden; cursor: default;
     display: flex; align-items: center; padding: 0 8px;
@@ -1173,9 +1173,9 @@
   .timeline-trim-right { right: 0; cursor: ew-resize; }
   .timeline-block {
     position: absolute;
-    min-height:44px;
-    top:4px;
-    bottom:4px;
+    min-height: 44px;
+    top: 4px;
+    bottom: 4px;
     background: var(--accent-dim);
     border: 1px solid var(--accent);
     border-radius: 4px;
@@ -3390,22 +3390,11 @@ function renderV3Timeline() {
       const label = a.path ? a.path.split('/').pop().replace(/\.(jpg|png|jpeg|webp)$/i, '') : 'asset-' + ai;
       const selCls = (_selectedAssetIndex === ai) ? ' selected' : '';
       const apprCls = a.approved ? ' approved' : '';
-      let iconHtml = '';
-      const atype = a.type || 'still';
-      if (atype === 'still') {
-        const p = a.path || '';
-        iconHtml = '<img class="timeline-block-icon" src="' + escHtml(p) + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">' +
-                   '<span class="timeline-block-icon-video" style="display:none">🖼</span>';
-      } else if (atype === 'video') {
-        iconHtml = '<span class="timeline-block-icon-video">▶</span>';
-      } else if (atype === 'audio') {
-        iconHtml = '<span class="timeline-block-icon-video">🎵</span>';
-      }
       blocksHtml +=
         '<div class="timeline-block' + apprCls + selCls + '" data-asset-index="' + ai + '"' +
           ' style="left:' + startX + 'px; width:' + width + 'px"' +
           ' title="' + escHtml(a.path || '') + ' — ' + (a.duration_secs || 0).toFixed(1) + 's @' + (a.time_in || 0).toFixed(1) + 's">' +
-          iconHtml +
+          (a.type === 'video' ? '<span class="timeline-block-icon-video">▶</span>' : a.type === 'audio' ? '<span class="timeline-block-icon-video">🎵</span>' : '<img class="timeline-block-icon" src="' + escHtml(imageUrl(a.path || '')) + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'"><span class="timeline-block-icon-video" style="display:none">🖼</span>') +
           escHtml(label) +
           '<div class="timeline-trim-handle timeline-trim-left" data-side="left"></div>' +
           '<div class="timeline-trim-handle timeline-trim-right" data-side="right"></div>' +
