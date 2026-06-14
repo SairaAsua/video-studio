@@ -928,8 +928,13 @@
     background: rgba(0,0,0,0.65); color: #fff; padding: 0 2px; border-radius: 2px;
     pointer-events: none;
   }
+  .images-preview-row {
+    display: flex;
+    gap: 12px;
+    flex-shrink: 0;
+  }
   .images-preview {
-    display: flex; flex-direction: column; width: 100%;
+    display: flex; flex-direction: column; flex: 0 0 55%;
     background: var(--surface); border-radius: var(--radius);
     overflow: hidden; flex-shrink: 0;
   }
@@ -1032,13 +1037,13 @@
 
   /* Prompt + Generate compact bar */
   .images-prompt-bar {
-    flex-shrink: 0; background: var(--surface); border-radius: var(--radius);
-    padding: 8px 12px; position: sticky; top: 0; z-index: 5;
+    flex: 1; background: var(--surface); border-radius: var(--radius);
+    padding: 8px 12px; display: flex; flex-direction: column;
   }
   .prompt-input-row {
-    display: flex; align-items: center; gap: 8px;
+    display: flex; align-items: stretch; gap: 8px; flex: 1;
   }
-  .prompt-input-row .images-prompt { flex: 1; margin: 0; resize: none; }
+  .prompt-input-row .images-prompt { flex: 1; margin: 0; resize: vertical; min-height: 60px; }
   .prompt-input-row .btn { flex-shrink: 0; padding: 6px 14px; font-size: 13px; }
   .prompt-input-row .btn.danger { padding: 6px 8px; font-size: 11px; background: transparent; border-color: var(--border); color: var(--text-muted); }
   .prompt-input-row .btn.danger:hover:not(:disabled) { background: var(--red); border-color: var(--red); color: #fff; }
@@ -1695,6 +1700,19 @@
       display: none !important;
     }
   }
+
+  @media (max-width: 1024px) {
+    .images-preview-row {
+      flex-direction: column;
+    }
+    .images-preview {
+      flex: 0 0 auto;
+      max-height: 260px;
+    }
+    .images-prompt-bar {
+      flex: none;
+    }
+  }
 </style>
 </head>
 <body>
@@ -1757,32 +1775,33 @@
             <span class="badge" id="images-approve-badge" style="display:none"></span>
           </div>
 
-          <!-- Preview area (full-width above gallery per redesign) -->
-          <div class="images-preview" id="images-preview" style="display:none">
-            <div class="preview-image-container">
-              <img id="images-preview-img" alt="Selected image preview">
-              <div class="preview-overlay">
-                <button type="button" class="preview-edit-btn" id="images-edit-btn">✨ Edit</button>
-                <button type="button" class="preview-fs-btn">🔍 View Fullscreen</button>
+          <div class="images-preview-row">
+            <!-- Preview area (full-width above gallery per redesign) -->
+            <div class="images-preview" id="images-preview" style="display:none">
+              <div class="preview-image-container">
+                <img id="images-preview-img" alt="Selected image preview">
+                <div class="preview-overlay">
+                  <button type="button" class="preview-edit-btn" id="images-edit-btn">✨ Edit</button>
+                  <button type="button" class="preview-fs-btn">🔍 View Fullscreen</button>
+                </div>
+              </div>
+              <div class="images-preview-info" id="images-preview-info"></div>
+            </div>
+            <!-- Compact sticky prompt + generate bar (merged prompt-area + actions) -->
+            <div class="images-prompt-bar">
+              <span class="images-prompt-label" id="images-prompt-label">Prompt</span>
+              <div class="prompt-input-row">
+                <textarea class="images-prompt" id="images-prompt" rows="2" placeholder="Describe the image you want..."></textarea>
+                <button class="btn primary" id="images-gen-btn">✨ Generate</button>
+                <button class="btn danger" id="images-unapprove-btn" disabled title="Unapprove">Unapprove</button>
               </div>
             </div>
-            <div class="images-preview-info" id="images-preview-info"></div>
           </div>
           <div class="images-edit-panel" id="images-edit-panel">
             <textarea id="images-edit-prompt" placeholder="Describe how to edit this image..."></textarea>
             <div class="edit-actions">
               <button class="btn primary" id="images-edit-apply-btn">Apply Edit</button>
               <button class="edit-cancel-btn" id="images-edit-cancel-btn">Cancel</button>
-            </div>
-          </div>
-
-          <!-- Compact sticky prompt + generate bar (merged prompt-area + actions) -->
-          <div class="images-prompt-bar">
-            <span class="images-prompt-label" id="images-prompt-label">Prompt</span>
-            <div class="prompt-input-row">
-              <textarea class="images-prompt" id="images-prompt" rows="2" placeholder="Describe the image you want..."></textarea>
-              <button class="btn primary" id="images-gen-btn">✨ Generate</button>
-              <button class="btn danger" id="images-unapprove-btn" disabled title="Unapprove">Unapprove</button>
             </div>
           </div>
 
@@ -3284,6 +3303,23 @@ function renderV3Captions() {
   });
 }
 
+async function uploadVideoFile(file) {
+  var sc = state.scenes[state.v3Index];
+  var sl = state.slug;
+  if (!sc || !sl) return;
+  var fd = new FormData();
+  fd.append('file', file);
+  fd.append('type', 'video');
+  try {
+    await api('/api/project/' + encodeURIComponent(sl) + '/storyboard/' + sc.id + '/add-version', {
+      method: 'POST', body: fd
+    });
+    reloadCurrent(sl);
+  } catch(e) {
+    setRenderMsg('Upload failed: ' + (e.message || e), true);
+  }
+}
+
 function renderV3VideoClips() {
   const container = $('v3-tab-videoclips');
   const scene = state.scenes[state.v3Index];
@@ -3345,21 +3381,18 @@ function renderV3VideoClips() {
       var dur = (v.duration_secs != null ? v.duration_secs : 5.0);
       var ar = escHtml(v.aspect_ratio || '16:9');
       var fname = p.split('/').pop() || '?';
-      var addCode = "(async function(){ var sc=state.scenes[state.v3Index]; if(!sc)return; var sl=state.slug; var tl=JSON.parse(JSON.stringify(sc.asset_timeline||[])); tl.push({type:'video',path:'" + p + "',duration_secs:5.0,aspect_ratio:'16:9',layer:0,approved:false,caption_phrases:[]}); try{ await api('/api/project/'+encodeURIComponent(sl)+'/storyboard/'+sc.id+'/timeline',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({asset_timeline:tl})}); reloadCurrent(sl); }catch(e){alert(e.message||e);} })();";
-      var delCode = "(async function(){ var sc=state.scenes[state.v3Index]; if(!sc)return; var sl=state.slug; var tl=JSON.parse(JSON.stringify(sc.asset_timeline||[])); var idx=-1; for(var i=0;i<tl.length;i++){ if(tl[i].type==='video' && tl[i].path==='" + p + "'){idx=i;break;} } if(idx>=0){ tl.splice(idx,1); try{ await api('/api/project/'+encodeURIComponent(sl)+'/storyboard/'+sc.id+'/timeline',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({asset_timeline:tl})}); reloadCurrent(sl); }catch(e){alert(e.message||e);} } })();";
-      var editCode = "(function(btn){event.stopPropagation();var card=btn.closest('.video-clip-card');if(!card)return;var panel=card.nextElementSibling;if(!panel||!panel.classList.contains('video-edit-panel')){panel=document.createElement('div');panel.className='video-edit-panel';card.parentNode.insertBefore(panel,card.nextSibling);var vpath='" + p + "';panel.innerHTML='<textarea placeholder=\"Describe how to edit this video...\"></textarea><div class=\"edit-actions\"><button class=\"btn\" style=\"font-size:9px;padding:1px 4px;\">Apply Edit</button><button class=\"btn\" style=\"font-size:9px;padding:1px 4px;\">Cancel</button></div>';var ta=panel.querySelector('textarea');var acts=panel.querySelector('.edit-actions');var ab=acts.querySelectorAll('button')[0];var cb=acts.querySelectorAll('button')[1];ab.onclick=function(e){e.stopPropagation();var pr=(ta&&ta.value||'').trim();if(!pr){setRenderMsg('Prompt required for edit',true);return;}var prog=document.createElement('div');prog.className='video-edit-progress';prog.innerHTML='<span class=\"spinner\"></span> Editing…';panel.appendChild(prog);ab.disabled=true;cb.disabled=true;var sl=state.slug;var sc=state.scenes[state.v3Index];if(!sc){if(prog.parentNode)prog.parentNode.removeChild(prog);ab.disabled=false;cb.disabled=false;return;}api('/api/project/'+encodeURIComponent(sl)+'/storyboard/'+sc.id+'/video/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source_video_path:vpath,prompt:pr})}).then(function(r){panel.style.display='none';}).catch(function(err){setRenderMsg('Edit failed: '+(err&&err.message||err),true);if(prog&&prog.parentNode)prog.parentNode.removeChild(prog);ab.disabled=false;cb.disabled=false;});};cb.onclick=function(e){e.stopPropagation();panel.style.display='none';};}panel.style.display=(panel.style.display==='block'?'none':'block');})(this);";
       var hasP = !!(v.prompt);
-      html += '<div class="video-clip-card" data-prompt="' + escHtml(v.prompt || '') + '" data-fname="' + escHtml(fname) + '" onclick="(function(el){var pr=el.getAttribute(\'data-prompt\');var ta=document.getElementById(\'v3-vc-prompt\');var lab=document.getElementById(\'v3-vc-prompt-label\');if(ta&&pr){ta.value=pr;ta.dataset.userEdited=\'false\';}if(lab&&pr){lab.textContent=\'Prompt from \'+el.getAttribute(\'data-fname\');}})(this)">';
+      html += '<div class="video-clip-card" data-prompt="' + escHtml(v.prompt || '') + '" data-fname="' + escHtml(fname) + '" data-vc-path="' + p + '">';
       if (hasP) {
         html += '<span class="prompt-indicator" title="Has saved prompt">📋</span>';
       }
       html += '<div class="thumb">▶</div>';
       html += '<div class="info">' + dur + 's · ' + ar + '<br><span style="font-size:9px;opacity:.7;">' + fname + '</span></div>';
       html += '<div style="padding:3px 4px 4px;display:flex;gap:4px;border-top:1px solid var(--border);">';
-      html += '<button class="btn" style="flex:1;font-size:9px;padding:1px 3px;" onclick="' + addCode + '">Add to Timeline</button>';
-      html += '<button class="btn" style="flex:1;font-size:9px;padding:1px 3px;" onclick="' + editCode + '">✂️ Edit</button>';
-      html += '<button class="btn" style="flex:1;font-size:9px;padding:1px 3px;background:var(--surface);color:var(--accent);" onclick="(function(b){openExtendPanel(\'' + p + '\',\'' + escHtml(fname) + '\',' + scene.id + ',b);})(this);event.stopPropagation();">⏭ Extend</button>';
-      html += '<button class="btn" style="flex:1;font-size:9px;padding:1px 3px;background:#c0392b;color:#fff;" onclick="' + delCode + '">Delete</button>';
+      html += '<button class="btn vc-action" style="flex:1;font-size:9px;padding:1px 3px;" data-action="vc-add-timeline" data-vc-path="' + p + '">Add to Timeline</button>';
+      html += '<button class="btn vc-action" style="flex:1;font-size:9px;padding:1px 3px;" data-action="vc-edit" data-vc-path="' + p + '">✂️ Edit</button>';
+      html += '<button class="btn vc-action" style="flex:1;font-size:9px;padding:1px 3px;background:var(--surface);color:var(--accent);" data-action="vc-extend" data-vc-path="' + p + '" data-vc-fname="' + escHtml(fname) + '">⏭ Extend</button>';
+      html += '<button class="btn vc-action" style="flex:1;font-size:9px;padding:1px 3px;background:#c0392b;color:#fff;" data-action="vc-delete" data-vc-path="' + p + '">Delete</button>';
       html += '</div>';
       html += '</div>';
     });
@@ -3367,16 +3400,116 @@ function renderV3VideoClips() {
   html += '</div>';
 
   // Upload
-  var zoneOnclick = "document.getElementById('v3-video-upload-input').click();";
-  var dropH = "event.preventDefault();this.classList.remove('drag-over');var f=event.dataTransfer.files[0];if(f){(async function(){var fd=new FormData();fd.append('file',f);fd.append('type','video');var sc=state.scenes[state.v3Index];var sl=state.slug;try{await api('/api/project/'+encodeURIComponent(sl)+'/storyboard/'+sc.id+'/add-version',{method:'POST',body:fd});reloadCurrent(sl);}catch(e){alert('Upload failed: '+(e.message||e));}})();}";
-  var chgH = "var f=this.files[0];if(f){(async function(){var fd=new FormData();fd.append('file',f);fd.append('type','video');var sc=state.scenes[state.v3Index];var sl=state.slug;try{await api('/api/project/'+encodeURIComponent(sl)+'/storyboard/'+sc.id+'/add-version',{method:'POST',body:fd});reloadCurrent(sl);}catch(e){alert('Upload failed: '+(e.message||e));}})();}this.value='';";
-  html += '<div class="video-upload-zone" onclick="' + zoneOnclick + '" ondragover="event.preventDefault();this.classList.add(\'drag-over\');" ondragleave="this.classList.remove(\'drag-over\');" ondrop="' + dropH + '">';
+  html += '<div class="video-upload-zone" id="v3-video-upload-zone">';
   html += 'Drop MP4/WebM/MOV here or click to upload';
-  html += '<input type="file" id="v3-video-upload-input" accept=".mp4,.webm,.mov" style="display:none" onchange="' + chgH + '">';
+  html += '<input type="file" id="v3-video-upload-input" accept=".mp4,.webm,.mov" style="display:none">';
   html += '</div>';
 
   container.innerHTML = html;
 
+  // ── Delegated click handler for video clip card actions ──
+  container.addEventListener('click', function(e) {
+    var btn = e.target.closest('.vc-action');
+    if (!btn) {
+      // Card click → load prompt
+      var card = e.target.closest('.video-clip-card');
+      if (card) {
+        var pr = card.getAttribute('data-prompt');
+        var ta = document.getElementById('v3-vc-prompt');
+        var lab = document.getElementById('v3-vc-prompt-label');
+        if (ta && pr) { ta.value = pr; ta.dataset.userEdited = 'false'; }
+        if (lab && pr) { lab.textContent = 'Prompt from ' + card.getAttribute('data-fname'); }
+      }
+      return;
+    }
+    e.stopPropagation();
+    var action = btn.getAttribute('data-action');
+    var vpath = btn.getAttribute('data-vc-path');
+    var sc = state.scenes[state.v3Index];
+    var sl = state.slug;
+    if (!sc || !sl) return;
+
+    if (action === 'vc-add-timeline') {
+      var tl = JSON.parse(JSON.stringify(sc.asset_timeline || []));
+      tl.push({type:'video', path: vpath, duration_secs:5.0, aspect_ratio:'16:9', layer:0, approved:false, caption_phrases:[]});
+      api('/api/project/' + encodeURIComponent(sl) + '/storyboard/' + sc.id + '/timeline', {
+        method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({asset_timeline: tl})
+      }).then(function(){ reloadCurrent(sl); }).catch(function(e){ alert(e.message || e); });
+    } else if (action === 'vc-delete') {
+      var tl2 = JSON.parse(JSON.stringify(sc.asset_timeline || []));
+      var idx = -1;
+      for (var i=0; i<tl2.length; i++) { if (tl2[i].type === 'video' && tl2[i].path === vpath) { idx = i; break; } }
+      if (idx >= 0) {
+        tl2.splice(idx, 1);
+        api('/api/project/' + encodeURIComponent(sl) + '/storyboard/' + sc.id + '/timeline', {
+          method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({asset_timeline: tl2})
+        }).then(function(){ reloadCurrent(sl); }).catch(function(e){ alert(e.message || e); });
+      }
+    } else if (action === 'vc-edit') {
+      var card = btn.closest('.video-clip-card');
+      if (!card) return;
+      var panel = card.nextElementSibling;
+      if (!panel || !panel.classList.contains('video-edit-panel')) {
+        panel = document.createElement('div');
+        panel.className = 'video-edit-panel';
+        card.parentNode.insertBefore(panel, card.nextSibling);
+        panel.innerHTML = '<textarea placeholder="Describe how to edit this video..."></textarea>' +
+          '<div class="edit-actions">' +
+            '<button class="btn vc-edit-apply" style="font-size:9px;padding:1px 4px;">Apply Edit</button>' +
+            '<button class="btn vc-edit-cancel" style="font-size:9px;padding:1px 4px;">Cancel</button>' +
+          '</div>';
+        var ta = panel.querySelector('textarea');
+        var applyBtn = panel.querySelector('.vc-edit-apply');
+        var cancelBtn = panel.querySelector('.vc-edit-cancel');
+        cancelBtn.onclick = function(ev) { ev.stopPropagation(); panel.style.display = 'none'; };
+        applyBtn.onclick = function(ev) {
+          ev.stopPropagation();
+          var pr = (ta && ta.value || '').trim();
+          if (!pr) { setRenderMsg('Prompt required for edit', true); return; }
+          var prog = document.createElement('div');
+          prog.className = 'video-edit-progress';
+          prog.innerHTML = '<span class="spinner"></span> Editing…';
+          panel.appendChild(prog);
+          applyBtn.disabled = true;
+          cancelBtn.disabled = true;
+          api('/api/project/' + encodeURIComponent(sl) + '/storyboard/' + sc.id + '/video/edit', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({source_video_path: vpath, prompt: pr})
+          }).then(function() { panel.style.display = 'none'; })
+            .catch(function(err) {
+              setRenderMsg('Edit failed: ' + (err&&err.message||err), true);
+              if (prog && prog.parentNode) prog.parentNode.removeChild(prog);
+              applyBtn.disabled = false; cancelBtn.disabled = false;
+            });
+        };
+      }
+      panel.style.display = (panel.style.display === 'block' ? 'none' : 'block');
+    } else if (action === 'vc-extend') {
+      openExtendPanel(vpath, btn.getAttribute('data-vc-fname') || 'video', sc.id, btn);
+    }
+  });
+
+  // ── Upload zone handlers ──
+  var uploadZone = document.getElementById('v3-video-upload-zone');
+  var uploadInput = document.getElementById('v3-video-upload-input');
+  if (uploadZone && uploadInput && !uploadZone.dataset.wired) {
+    uploadZone.dataset.wired = '1';
+    uploadZone.addEventListener('click', function() { uploadInput.click(); });
+    uploadZone.addEventListener('dragover', function(e) { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+    uploadZone.addEventListener('dragleave', function() { uploadZone.classList.remove('drag-over'); });
+    uploadZone.addEventListener('drop', function(e) {
+      e.preventDefault();
+      uploadZone.classList.remove('drag-over');
+      var f = e.dataTransfer.files[0];
+      if (f) uploadVideoFile(f);
+    });
+    uploadInput.addEventListener('change', function() {
+      var f = this.files[0];
+      if (f) { uploadVideoFile(f); this.value = ''; }
+    });
+  }
+
+  // ── Prompt textarea ──
   var vcp = $('v3-vc-prompt');
   var vcl = $('v3-vc-prompt-label');
   if (vcp && vcl) {
