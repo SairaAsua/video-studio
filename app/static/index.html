@@ -984,6 +984,28 @@
     padding: 4px;
   }
 
+  .timeline-bin-caption {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    cursor: grab;
+    font-size: 11px;
+  }
+  .timeline-bin-section-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 8px;
+    margin-bottom: 4px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+  }
+
   /* ── Script pane resize handle ── */
   .pane-resize-handle {
     position: absolute;
@@ -1786,10 +1808,6 @@ async function generateVersion(id) {
   setRenderMsg(`Generating scene ${id}…`);
   try {
     await api(`/api/project/${encodeURIComponent(state.slug)}/storyboard/${id}/image`, { method: 'POST' });
-    // Image is now on disk — reload to show it
-    state.generating.delete(id);
-    await loadProject(state.slug);
-    setRenderMsg(`Scene ${id}: image ready`);
   } catch (err) {
     state.generating.delete(id);
     if (state.scenes[state.v3Index]?.id === id) renderV3Assets();
@@ -2073,7 +2091,7 @@ function renderExportItem(exp) {
 function v3SceneStatus(scene) {
   // Sidebar status glyph, by precedence: approved (any approved version in images gallery) →
   // in-progress (has a version) → no-image. (Asset gallery feeds asset_timeline still selection.)
-  const versions = scene.images || [];
+  const versions = (scene.asset_timeline || []).filter(a => a.type === 'still' && a.path);
   if (versions.some((v) => v.approved)) return { icon: '●', cls: 'approved' };
   if (versions.length) return { icon: '▸', cls: 'in-progress' };
   return { icon: '○', cls: 'no-image' };
@@ -2101,7 +2119,7 @@ function renderV3SceneStrip() {
   if (!strip) return;
   const scenes = state.scenes || [];
   strip.innerHTML = scenes.map((scene, i) => {
-    const versions = scene.images || [];
+    const versions = (scene.asset_timeline || []).filter(a => a.type === 'still' && a.path);
     const approved = versions.find((v) => v.approved);
     const img = approved || (versions.length ? versions[0] : null);
     const isActive = (i === state.v3Index);
@@ -2196,12 +2214,11 @@ function wireV3Events() {
   // Assets tab: Gen button
   $('assets-gen-btn').addEventListener('click', async () => {
     const scene = state.scenes[state.v3Index];
-    if (scene) {
-      state.selectedScene = scene.id;
-      updateRegenButton();
-      await generateVersion(scene.id);
-      renderV3Assets();
-    }
+    if (!scene || state.generating.has(scene.id)) return;
+    state.selectedScene = scene.id;
+    updateRegenButton();
+    await generateVersion(scene.id);
+    renderV3Assets();
   });
 
   // Assets tab: Regen button
@@ -2302,8 +2319,9 @@ function wireV3Events() {
 function renderV3Assets() {
   const scene = state.scenes[state.v3Index];
   if (!scene) return;
+  const generating = state.generating.has(scene.id);
 
-  const versions = scene.images || [];
+  const versions = (scene.asset_timeline || []).filter(a => a.type === 'still' && a.path);
   const gallery = $('assets-gallery');
   const preview = $('assets-preview');
 
@@ -2318,9 +2336,18 @@ function renderV3Assets() {
   }
 
   // Button states
-  const hasApproved = versions.some(v => v.approved);
+  const hasApproved = versions.length > 0;
+  const genBtn = $('assets-gen-btn');
+  if (generating) {
+    genBtn.innerHTML = '<span class="spinner"></span>Generating…';
+    genBtn.disabled = true;
+    $('assets-regen-btn').disabled = true;
+  } else {
+    genBtn.textContent = '+ Gen';
+    genBtn.disabled = false;
+    $('assets-regen-btn').disabled = false;
+  }
   $('assets-unapprove-btn').disabled = !hasApproved;
-  $('assets-regen-btn').disabled = false;
 
   // Badge
   const badge = $('assets-status-badge');
@@ -2339,8 +2366,8 @@ function renderV3Assets() {
 
 function renderV3AssetsGallery(scene) {
   const gallery = $('assets-gallery');
-  const versions = scene.images || [];
-  const idx = Math.min(scene.current_image || 0, versions.length - 1);
+  const versions = (scene.asset_timeline || []).filter(a => a.type === 'still' && a.path);
+  const idx = 0;
 
   gallery.innerHTML = versions.map((v, i) => {
     const active = i === idx ? ' active' : '';
@@ -2355,8 +2382,8 @@ function renderV3AssetsGallery(scene) {
 
 function renderV3AssetsPreview(scene) {
   const img = $('assets-preview-img');
-  const versions = scene.images || [];
-  const idx = Math.min(scene.current_image || 0, versions.length - 1);
+  const versions = (scene.asset_timeline || []).filter(a => a.type === 'still' && a.path);
+  const idx = 0;
   const v = versions[idx];
   if (v) {
     img.src = imageUrl(v.path);
@@ -2823,19 +2850,27 @@ async function refreshTimelineFromServer(sceneId) {
   } catch (e) { /* ignore */ }
 }
 
-function buildTimelineBin(currentAssets) {
-  // Collect all approved assets across all scenes (for bin; asset_timeline consumes selected assets)
+function buildTimelineBin(currentAssets, sceneId) {
+  const sid = sceneId || _lastTimelineSceneId;
+  // Collect assets from ONLY the current scene
   const allAssets = [];
-  (state.scenes || []).forEach(s => {
-    (s.asset_timeline || []).forEach(a => {
+  const targetScene = (state.scenes || []).find(s => s.id === sid);
+  if (targetScene) {
+    (targetScene.asset_timeline || []).forEach(a => {
       if ((a.type === 'still' || a.type === 'video') && a.path) {
-        allAssets.push({ path: a.path, layer: a.layer, sceneId: s.id, type: a.type });
+        allAssets.push({ path: a.path, layer: a.layer, sceneId: targetScene.id, type: a.type });
       }
     });
-  });
+  }
+
+  const curScene = state.scenes[state.v3Index];
+  const hasCaptions = !!(curScene && Array.isArray(curScene.caption_phrases) && curScene.caption_phrases.length > 0);
 
   if (!allAssets.length) {
-    return '<div class="timeline-bin"><div class="timeline-bin-label">Bin — no media</div></div>';
+    if (!hasCaptions) {
+      return '<div class="timeline-bin"><div class="timeline-bin-label">Bin — 0 assets from scene ' + (sid || '?') + '</div><div style="padding:6px 8px;font-size:10px;color:var(--text-muted);">No assets in this scene</div></div>';
+    }
+    // fall through to include captions section
   }
 
   let stillCount = 0, videoCount = 0;
@@ -2860,11 +2895,30 @@ function buildTimelineBin(currentAssets) {
       '</div>';
   }).join('');
 
-  return '' +
+  let binHtml = '' +
     '<div class="timeline-bin">' +
-      '<div class="timeline-bin-label">Bin — ' + stillCount + ' stills + ' + videoCount + ' videos from filesystem</div>' +
-      '<div class="timeline-bin-items">' + itemsHtml + '</div>' +
-    '</div>';
+      (allAssets.length
+        ? '<div class="timeline-bin-label">Bin — ' + (stillCount + videoCount) + ' assets from scene ' + sid + '</div>' +
+          '<div class="timeline-bin-items">' + itemsHtml + '</div>'
+        : '<div class="timeline-bin-label">Bin — 0 assets from scene ' + (sid || '?') + '</div><div style="padding:6px 8px;font-size:10px;color:var(--text-muted);">No assets in this scene</div>');
+
+  if (hasCaptions) {
+    const N = curScene.caption_phrases.length;
+    binHtml += '<div class="timeline-bin-section-label">💬 Captions (' + N + ' phrases from current scene)</div>';
+    for (let pi = 0; pi < curScene.caption_phrases.length; pi++) {
+      const phrase = curScene.caption_phrases[pi] || {};
+      const txt = (phrase.text ? String(phrase.text).trim() : '');
+      const short = escHtml(txt.length > 30 ? txt.slice(0, 30) + '…' : (txt || '(empty)'));
+      const tin = (phrase.time_in != null ? phrase.time_in : '?');
+      const tout = (phrase.time_out != null ? phrase.time_out : '?');
+      binHtml += '<div class="timeline-bin-caption" draggable="true" data-phrase-idx="' + pi + '" title="' + escHtml(txt || '(empty)') + '">' +
+        '💬 ' + short + ' ' + tin + '→' + tout +
+      '</div>';
+    }
+  }
+
+  binHtml += '</div>';
+  return binHtml;
 }
 
 function buildCaptionsSubEditor(asset, ai) {
@@ -3419,7 +3473,7 @@ function renderV3Timeline() {
     '</div>';
 
   // Build bin
-  const binHtml = buildTimelineBin(assets);
+  const binHtml = buildTimelineBin(assets, _lastTimelineSceneId);
 
   // Props sidebar
   const propsHtml = buildTimelinePropsHtml();
@@ -3524,6 +3578,24 @@ function renderV3Timeline() {
     });
   }
 
+  // Wire bin captions for drag-from-bin (append caption phrase to target asset)
+  const binCaptions = container.querySelectorAll('.timeline-bin-caption');
+  for (let ci = 0; ci < binCaptions.length; ci++) {
+    const capEl = binCaptions[ci];
+    capEl.addEventListener('dragstart', function(e) {
+      const idx = capEl.getAttribute('data-phrase-idx');
+      const scene = state.scenes[state.v3Index];
+      if (!scene || !scene.caption_phrases || !scene.caption_phrases[idx]) return;
+      const phrase = scene.caption_phrases[idx];
+      e.dataTransfer.setData('application/json', JSON.stringify({
+        kind: 'caption',
+        phrase: phrase,
+        phraseIdx: Number(idx)
+      }));
+      e.dataTransfer.effectAllowed = 'copy';
+    });
+  }
+
   // Drop target on tracks area
   const dropTarget = container.querySelector('.timeline-tracks-inner') || container.querySelector('.timeline-tracks');
   if (dropTarget) {
@@ -3553,13 +3625,64 @@ function renderV3Timeline() {
       const tracks = dropTarget.querySelectorAll('.timeline-track');
       for (let i=0; i<tracks.length; i++) tracks[i].classList.remove('drag-target');
       let path = '';
+      let parsed = null;
       try {
         const raw = e.dataTransfer.getData('application/json');
         if (raw) {
-          const parsed = JSON.parse(raw);
+          parsed = JSON.parse(raw);
           path = parsed.path || '';
         }
       } catch (ex) {}
+      if (parsed && parsed.kind === 'caption' && parsed.phrase) {
+        const phrase = parsed.phrase;
+        const rect = dropTarget.getBoundingClientRect();
+        let dropX = e.clientX - rect.left - 60;
+        if (dropX < 0) dropX = 0;
+        let dropTimeIn = dropX / _currentPxPerSec;
+        dropTimeIn = computeSnapped(dropTimeIn, _currentPxPerSec, -1);
+        const dropY = e.clientY - rect.top;
+        const rulerHeight = 28;
+        const trackHeight = 52;
+        let targetLayer = (dropY < rulerHeight) ? 0 : Math.floor((dropY - rulerHeight) / trackHeight);
+        if (targetLayer < 0) targetLayer = 0;
+        if (targetLayer > 4) targetLayer = 4;
+        let targetAsset = null;
+        let targetAi = -1;
+        for (let ai = 0; ai < _timelineAssets.length; ai++) {
+          const a = _timelineAssets[ai];
+          if (a.layer !== targetLayer) continue;
+          const aEnd = (a.time_in || 0) + (a.duration_secs || 5);
+          if (dropTimeIn >= (a.time_in || 0) && dropTimeIn < aEnd) {
+            targetAsset = a;
+            targetAi = ai;
+            break;
+          }
+        }
+        snapshotBeforeMutate();
+        if (targetAsset) {
+          const cloned = Object.assign({}, phrase);
+          if (!Array.isArray(targetAsset.caption_phrases)) targetAsset.caption_phrases = [];
+          targetAsset.caption_phrases.push(cloned);
+        } else {
+          const clonedPhrase = Object.assign({}, phrase);
+          const newAsset = {
+            type: 'still',
+            path: '__caption__',
+            layer: targetLayer,
+            time_in: Number(dropTimeIn.toFixed(2)),
+            duration_secs: 5.0,
+            approved: false,
+            motion_preset: null,
+            caption_phrases: [clonedPhrase]
+          };
+          normalizeAsset(newAsset);
+          _timelineAssets.push(newAsset);
+          _selectedAssetIndex = _timelineAssets.length - 1;
+        }
+        markTimelineDirty();
+        renderV3Timeline();
+        return;
+      }
       if (!path) return;
       const rect = dropTarget.getBoundingClientRect();
       let dropX = e.clientX - rect.left - 60;
