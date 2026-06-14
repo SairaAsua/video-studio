@@ -284,8 +284,54 @@ async def request_scene_image(slug: str, scene_id: int):
 
     sb_path, sb = load_storyboard(slug)
     scene = find_scene(sb, scene_id)
-    await sse_notify(slug, f"image-requested:{scene_id}")
-    return {"ok": True, "scene": scene_id, "status": "requested", "provider": "xai-grok-imagine"}
+    prompt = scene.get("visual_direction", "")
+    await sse_notify(slug, f"image-generating:{scene_id}")
+
+    try:
+        # Run generation in thread pool (blocking HTTP call)
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            _generate_image_sync,
+            prompt,
+            str(project_dir(slug) / "scenes"),
+        )
+    except Exception as e:
+        await sse_notify(slug, f"image-failed:{scene_id}")
+        raise HTTPException(500, f"Generation failed: {e}")
+
+    if not result["ok"]:
+        await sse_notify(slug, f"image-failed:{scene_id}")
+        raise HTTPException(500, result.get("error", "Unknown generation error"))
+
+    # Register in asset_timeline
+    img_path = Path(result["image_path"])
+    rel_path = f"scenes/{img_path.name}"
+    entry = {
+        "type": "still",
+        "path": rel_path,
+        "layer": 0,
+        "caption_phrases": [],
+        "prompt": prompt,
+    }
+    if not isinstance(scene.get("asset_timeline"), list):
+        scene["asset_timeline"] = []
+    scene["asset_timeline"].append(entry)
+    save_storyboard(sb_path, sb)
+
+    await sse_notify(slug, f"still-registered:{scene_id}")
+    return {"ok": True, "scene": scene_id, "path": rel_path, "status": "generated"}
+
+
+def _generate_image_sync(prompt: str, output_dir: str) -> dict:
+    """Synchronous wrapper — called from thread pool."""
+    import importlib.util
+    bridge = Path(__file__).resolve().parent.parent / "lib" / "gen_bridge.py"
+    spec = importlib.util.spec_from_file_location("gen_bridge", bridge)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    ok, result = mod.generate_image(prompt, output_dir)
+    return {"ok": ok, "image_path" if ok else "error": result}
 
 
 class VideoGenRequest(BaseModel):

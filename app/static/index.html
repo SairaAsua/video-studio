@@ -1892,12 +1892,31 @@ function connectSSE() {
       case 'ping':
         break;
       case 'gen-requested':
-        // Generation started (possibly by another client or the agent):
-        // show the spinner, don't reload — nothing on disk changed yet.
+        // Legacy — handled via image-generating now
         if (Number.isFinite(sceneId)) {
           state.generating.add(sceneId);
           renderStoryboard();
           setRenderMsg(`Generating scene ${sceneId}…`);
+        }
+        break;
+      case 'image-generating':
+        if (Number.isFinite(sceneId)) {
+          state.generating.add(sceneId);
+          setRenderMsg(`Generating scene ${sceneId}…`);
+          if (state.scenes[state.v3Index]?.id === sceneId) {
+            const st = $('images-status');
+            if (st) { st.style.display = 'inline'; st.innerHTML = '<span class="spinner"></span> Generating…'; }
+          }
+        }
+        break;
+      case 'image-failed':
+        if (Number.isFinite(sceneId)) {
+          state.generating.delete(sceneId);
+          setRenderMsg(`Scene ${sceneId}: generation failed`, true);
+          if (state.scenes[state.v3Index]?.id === sceneId) {
+            const st = $('images-status');
+            if (st) { st.style.display = 'inline'; st.innerHTML = '⚠ Generation failed'; }
+          }
         }
         break;
       case 'image_ready':
