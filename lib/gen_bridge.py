@@ -54,7 +54,7 @@ def generate_video(prompt, output_dir, reference_image_paths=None, duration_secs
     body = {
         "model": "grok-imagine-video",
         "prompt": prompt,
-        "duration": min(max(duration_secs, 1), 15),
+        "duration": int(min(max(duration_secs, 1), 15)),
         "aspect_ratio": aspect_ratio,
         "resolution": resolution,
     }
@@ -67,7 +67,28 @@ def generate_video(prompt, output_dir, reference_image_paths=None, duration_secs
         return False, f"xAI video API error {r.status_code}: {r.text[:300]}"
     
     data = r.json()
-    video_url = data.get('data', [{}])[0].get('url')
+    
+    # Handle async polling if response has request_id but no data
+    video_url = data.get('data', [{}])[0].get('url') if data.get('data') else None
+    request_id = data.get('request_id')
+    
+    if not video_url and request_id:
+        # Poll for completion
+        poll_url = f"https://api.x.ai/v1/videos/generations/{request_id}"
+        for attempt in range(20):  # up to ~3 minutes
+            time.sleep(10)
+            pr = requests.get(poll_url, headers=headers, timeout=30)
+            if pr.status_code == 200:
+                pd = pr.json()
+                status = pd.get('status', '')
+                if status == 'completed':
+                    video_url = pd.get('data', [{}])[0].get('url') if pd.get('data') else pd.get('video_url')
+                    break
+                elif status == 'failed':
+                    return False, f"Video generation failed: {pd.get('error', 'unknown')}"
+        if not video_url:
+            return False, f"Video polling timed out after 20 attempts"
+    
     if not video_url:
         return False, f"No video URL: {json.dumps(data)[:200]}"
     
