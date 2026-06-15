@@ -60,15 +60,30 @@ def get_paths(slug: str) -> dict:
     }
 
 
-def _strip_filter_for_audio_check(audio_path: Path, duration: float) -> list:
-    """Build the audio part of a per-scene filter graph.
-
-    If audio is missing, returns an empty filter (no audio). Otherwise
-    returns a single-element list with anullsrc fallback to guarantee
-    the audio track exists at the correct duration.
+def _strip_filter_for_audio_check(audio_path: Path, duration: float, video_indices: list[int] = None) -> list:
+    """
+    Build the audio part of a per-scene filter graph.
+    Mixes TTS narration (index 1) with ambient audio from video files at 20% gain.
+    If no video_indices provided, uses TTS only.
     """
     if not audio_path.exists():
+        if video_indices:
+            parts = []
+            for i, vi in enumerate(video_indices):
+                parts.append(f"[{vi}:a]volume=0.2[vaud{i}]")
+            inputs = "".join(f"[vaud{i}]" for i in range(len(video_indices)))
+            parts.append(f"{inputs}amix=inputs={len(video_indices)}[aud]")
+            return parts
         return [f"anullsrc=r=44100:cl=stereo[aud]"]
+    
+    if video_indices:
+        parts = []
+        for i, vi in enumerate(video_indices):
+            parts.append(f"[{vi}:a]volume=0.2,apad,atrim=0:{duration},asetpts=PTS-STARTPTS[vaud{i}]")
+        inputs = "".join(f"[vaud{i}]" for i in range(len(video_indices)))
+        parts.append(f"{inputs}amix=inputs={len(video_indices)}[vamb]")
+        parts.append(f"[1:a][vamb]amix=inputs=2:duration=longest,aresample=44100,apad,atrim=0:{duration},asetpts=PTS-STARTPTS[aud]")
+        return parts
     return [f"[1:a]aresample=44100,apad,atrim=0:{duration},asetpts=PTS-STARTPTS[aud]"]
 
 
@@ -86,8 +101,16 @@ def render_scene(scene: dict, paths: dict, quality: str = "draft",
     """
     scene_id = scene["id"]
 
-    audio_path = paths["audio"] / f"scene-{scene_id:02d}.mp3"
-    output_path = paths["renders"] / f"scene-{scene_id:02d}.mp4"
+    sid_str = str(scene_id)
+    if isinstance(scene_id, int):
+        audio_path = paths["audio"] / f"scene-{scene_id:02d}.mp3"
+        output_path = paths["renders"] / f"scene-{scene_id:02d}.mp4"
+    elif str(scene_id) == "3b":
+        audio_path = paths["audio"] / "scene-03b.mp3"
+        output_path = paths["renders"] / "scene-3b.mp4"
+    else:
+        audio_path = paths["audio"] / f"scene-{scene_id}.mp3"
+        output_path = paths["renders"] / f"scene-{scene_id}.mp4"
     paths["renders"].mkdir(parents=True, exist_ok=True)
 
     timeline = scene.get("asset_timeline", [])
@@ -106,10 +129,20 @@ def render_scene(scene: dict, paths: dict, quality: str = "draft",
         if t not in ("still", "video"):
             raise RuntimeError(f"Scene {scene_id}: unsupported asset type '{t}' (only 'still' and 'video' supported)")
         dur = float(a.get("duration_secs", 0.0))
-        item["time_in"] = cum
+        # Respect explicit time_in from JSON if set; otherwise compute sequentially
+        if "time_in" in a and a["time_in"] is not None:
+            item["time_in"] = float(a["time_in"])
+        else:
+            item["time_in"] = cum
         item["dur"] = dur
-        cum += dur
+        cum = max(cum, item["time_in"] + dur)
     total_duration = cum if cum > 0 else 5.0
+    # Audio-first: scene duration is the audio duration, not the timeline sum.
+    # This ensures scenes always match their narration length.
+    if audio_path.exists():
+        audio_dur = _probe_duration(audio_path)
+        if audio_dur > 0:
+            total_duration = audio_dur
 
     # Input layout (indices):
     # 0: black canvas (lavfi color with explicit d=total)
@@ -133,14 +166,16 @@ def render_scene(scene: dict, paths: dict, quality: str = "draft",
         resolved = paths["scenes"].parent / asset["path"]
         atype = asset.get("type") or "still"
         if atype == "video":
-            t_in = float(asset.get("time_in", 0.0))
             dsecs = float(asset.get("duration_secs", 5.0))
-            cmd_inputs += ["-ss", str(t_in), "-t", str(dsecs), "-i", str(resolved)]
+            # No stream_loop on input — loop is handled in the filter chain
+            cmd_inputs += ["-i", str(resolved)]
         else:
             cmd_inputs += ["-loop", "1", "-framerate", "30", "-i", str(resolved)]
 
-    # Audio filter (unchanged helper; relies on audio at index 1 when real audio present)
-    audio_filter = _strip_filter_for_audio_check(audio_path, total_duration)
+    # Audio filter — mix TTS narration (index 1) with ambient audio from video files at 20%
+    video_indices = [first_still_idx + entry["pos"] for entry in asset_list
+                     if entry["asset"].get("type") == "video"]
+    audio_filter = _strip_filter_for_audio_check(audio_path, total_duration, video_indices if video_indices else None)
     audio_filter_str = ",".join(audio_filter)
 
     # Per-asset processing filters -> [l{pos}]
@@ -157,12 +192,26 @@ def render_scene(scene: dict, paths: dict, quality: str = "draft",
         if atype == "still":
             m_preset = asset.get("motion") or asset.get("motion_preset")
             if m_preset:
-                motion = get_motion(m_preset, w=width, h=height)
+                dur = float(asset.get("duration_secs", 0))
+                motion = get_motion(m_preset, w=width, h=height, duration_secs=dur)
             else:
-                motion = None
+                # still without explicit motion: scale to canvas for blend/overlay compatibility
+                motion = (
+                    f"scale=w={width}:h={height}:force_original_aspect_ratio=decrease,"
+                    f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black@0"
+                )
         else:
-            # video: passthrough scale+crop instead of get_motion
-            motion = f"scale=w={width}:h={height}:force_original_aspect_ratio=decrease,crop={width}:{height}"
+            # video: trim to asset window, setpts shifts to global scene position.
+            # NO loop — videos should be pre-extended via video_extend() if they need
+            # to fill a longer window than their source duration.
+            vdur = float(asset.get("duration_secs", 5.0))
+            v_tin = entry.get("time_in", 0.0)
+            motion = (
+                f"fps=30,"
+                f"scale=w={width}:h={height}:force_original_aspect_ratio=decrease,"
+                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,"
+                f"trim=duration={vdur},setpts=PTS-STARTPTS+{v_tin}/TB"
+            )
 
         # captions: offset relative times by this asset's scene time_in
         caps = asset.get("caption_phrases", []) or []
@@ -189,8 +238,13 @@ def render_scene(scene: dict, paths: dict, quality: str = "draft",
         if cap_chain:
             parts.append(cap_chain)
         if layer > 0 or opacity != 1.0:
-            # apply for layer>0 blending (even at 1.0 is harmless)
+            # apply for layer>0 blending — ensure rgba for proper alpha
+            parts.append("format=rgba")
             parts.append(f"colorchannelmixer=aa={opacity}")
+        # screen blend: negate placa first (dark text on light bg → light text on dark bg)
+        # then screen blend makes dark=transparent, light=visible — floating text effect
+        if asset.get("blend_mode") == "screen":
+            parts.insert(-1, "negate") if parts else parts.append("negate")
 
         if parts:
             chain = ",".join(parts)
@@ -416,10 +470,88 @@ def concat_scenes(scene_paths: list[Path], output_path: Path,
     return output_path
 
 
+def painterly_filter(input_path: Path, output_path: Path,
+                     blur_sigma: float = 0.6,
+                     grain_amount: int = 3,
+                     warmth_gamma: float = 0.94) -> Path:
+    """
+    Post-process a video with a painterly aesthetic:
+      - smartblur: edge-preserving blur (softens digital sharpness)
+      - noise: subtle film grain (organic texture)
+      - eq: gamma + contrast tweak for warmth
+    Returns output_path.
+    """
+    vf = (
+        f"smartblur=lr={blur_sigma:.1f}:ls=0.5:lt=15:cr=0.8,"
+        f"noise=alls={grain_amount}:allf=t+u,"
+        f"eq=gamma={warmth_gamma:.2f}:contrast=1.04"
+    )
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(input_path),
+        "-vf", vf,
+        "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "copy",
+        str(output_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    if result.returncode != 0:
+        print(f"--- ffmpeg painterly STDERR ---", file=sys.stderr)
+        print(result.stderr[-1500:], file=sys.stderr)
+        raise RuntimeError("painterly filter failed")
+    return output_path
+
+
+def video_extend(input_path: Path, output_path: Path, target_dur: float = 12.0) -> Path:
+    """
+    Extend a short video to target_dur seconds by ping-pong looping
+    (forward → reverse → forward → ...). Preserves audio if present.
+    """
+    import json as _json
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "json", str(input_path)],
+        capture_output=True, text=True, timeout=10
+    )
+    dur = float(_json.loads(probe.stdout)["format"]["duration"])
+    cycles = max(1, int(target_dur / dur) + 1)
+
+    # Build filter: reverse + concat with forward to create ping-pong loop
+    vf_parts = []
+    for i in range(cycles):
+        if i % 2 == 0:
+            vf_parts.append(f"[0:v]trim=0:{dur},setpts=PTS-STARTPTS[fwd{i}]")
+        else:
+            vf_parts.append(f"[0:v]trim=0:{dur},reverse,setpts=PTS-STARTPTS[rev{i}]")
+
+    concat_inputs = []
+    for i in range(cycles):
+        tag = f"fwd{i}" if i % 2 == 0 else f"rev{i}"
+        concat_inputs.append(f"[{tag}]")
+    concat_str = "".join(concat_inputs) + f"concat=n={cycles}:v=1:a=0,trim=duration={target_dur}[vout]"
+
+    vf = ";".join(vf_parts) + ";" + concat_str
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(input_path),
+        "-filter_complex", vf,
+        "-map", "[vout]",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+        "-pix_fmt", "yuv420p",
+        "-t", f"{target_dur:.3f}",
+        str(output_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    if result.returncode != 0:
+        print(f"--- ffmpeg video_extend STDERR ---", file=sys.stderr)
+        print(result.stderr[-1500:], file=sys.stderr)
+        raise RuntimeError("video_extend failed")
+    return output_path
+
+
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: assemble.py <slug> [--width W] [--height H] [--crf N] [--preset ultrafast|...|veryslow] [--scene <id>] [--debug-filter]")
-        sys.exit(1)
 
     slug = sys.argv[1]
     width = 1920

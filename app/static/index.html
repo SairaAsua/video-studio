@@ -1270,6 +1270,10 @@
   .timeline-block-icon { width:24px; height:24px; flex-shrink:0; border-radius:2px; object-fit:cover; margin-right:6px; }
   .timeline-block-icon-video { width:24px; height:24px; flex-shrink:0; background:rgba(255,255,255,0.08); border-radius:2px; display:flex; align-items:center; justify-content:center; font-size:14px; margin-right:6px; }
 
+  /* Subtitle track */
+  .timeline-sub-block { position:absolute; top:2px; height:18px; background:rgba(201,160,58,0.15); border-left:1px solid var(--gold); overflow:hidden; white-space:nowrap; font-size:10px; color:var(--text-muted); padding:1px 4px; border-radius:2px; }
+  .timeline-subs { overflow:hidden; border-bottom:1px solid var(--border); margin-bottom:2px; }
+
   /* Bin (filesystem-sourced) */
   .timeline-bin {
     height: 160px; flex-shrink: 0; border-top: 1px solid var(--border);
@@ -3750,15 +3754,37 @@ function normalizeAsset(a) {
 }
 
 function computeTimelineTotalDuration(assets, scene) {
-  let max = 10;
-  const sceneDur = (scene && scene.time_in != null && scene.time_out != null)
-    ? (parseFloat(scene.time_out) - parseFloat(scene.time_in)) : 0;
-  if (sceneDur > max) max = sceneDur;
-  (assets || []).forEach(function(a) {
-    const end = (a.time_in || 0) + (a.duration_secs || 0);
-    if (end > max) max = end;
-  });
-  return max;
+  // Audio is the only authoritative duration — ruler never grows beyond it.
+  const narrationDur = parseFloat((scene && scene.narration_duration_secs) || 0);
+  return narrationDur > 0 ? narrationDur : 10;
+}
+
+function buildSrtUrl(scene) {
+  if (!scene) return null;
+  const slug = (state.project && state.project.slug) || 'beacon-journey';
+  const sid = scene.id;
+  let base;
+  if (sid === '3b') base = 'scene-03b.srt';
+  else if (typeof sid === 'number') base = 'scene-' + String(sid).padStart(2, '0') + '.srt';
+  else base = 'scene-' + sid + '.srt';
+  return '/projects/' + slug + '/audio/' + base;
+}
+
+function parseSrt(text) {
+  const cues = [];
+  const blocks = text.trim().split(/\n\n+/);
+  for (let i = 0; i < blocks.length; i++) {
+    const lines = blocks[i].trim().split('\n');
+    if (lines.length < 2) continue;
+    const timeLine = lines[1];
+    const m = timeLine.match(/(\d+):(\d+):(\d+)[\.,](\d+)\s*-->\s*(\d+):(\d+):(\d+)[\.,](\d+)/);
+    if (!m) continue;
+    const startSec = parseInt(m[1])*3600 + parseInt(m[2])*60 + parseInt(m[3]) + parseInt(m[4])/1000;
+    const endSec = parseInt(m[5])*3600 + parseInt(m[6])*60 + parseInt(m[7]) + parseInt(m[8])/1000;
+    const text = lines.slice(2).join(' ');
+    cues.push({ startSec: startSec, endSec: endSec, text: text });
+  }
+  return cues;
 }
 
 function computeSnapped(value, pxPerSec, excludeIndex) {
@@ -4556,7 +4582,8 @@ function renderV3Timeline() {
   const pxPerSec = _timelineZoom * 40;
   _currentPxPerSec = pxPerSec;
   const totalDuration = computeTimelineTotalDuration(assets, scene);
-  const trackAreaWidth = totalDuration * pxPerSec;
+  const audioDuration = parseFloat((scene && scene.narration_duration_secs) || totalDuration) || totalDuration;
+  const trackAreaWidth = Math.max(totalDuration, audioDuration) * pxPerSec;
   const rulerWidth = Math.max(trackAreaWidth, 400);
   const labelColW = 60;
 
@@ -4572,7 +4599,7 @@ function renderV3Timeline() {
       '<button class="btn" style="font-size:11px;padding:2px 8px" data-timeline-action="snap-toggle">Snap: ' + (_snapEnabled ? 'ON' : 'OFF') + '</button>' +
       '<button class="btn" style="font-size:14px;padding:2px 8px;opacity:' + (canUndo ? '1' : '0.4') + '"' + (canUndo ? '' : ' disabled') + ' data-timeline-action="undo">↩</button>' +
       '<button class="btn" style="font-size:14px;padding:2px 8px;opacity:' + (canRedo ? '1' : '0.4') + '"' + (canRedo ? '' : ' disabled') + ' data-timeline-action="redo">↪</button>' +
-      '<span style="margin-left:auto">Duration: ' + totalDuration.toFixed(1) + 's</span>' +
+      '<span style="margin-left:auto">Duration: ' + audioDuration.toFixed(1) + 's</span>' +
     '</div>';
 
   // Build preview panel (toolbar + video below) — replaces old placeholder
@@ -4602,6 +4629,27 @@ function renderV3Timeline() {
   }
   const rulerHtml = '<div class="timeline-ruler" style="min-width:' + (labelColW + trackAreaWidth) + 'px;height:28px;">' + rulerInner + '</div>';
 
+  // Build subtitle track from SRT file
+  let subsHtml = '';
+  (function() {
+    const srtUrl = buildSrtUrl(scene);
+    if (!srtUrl) return;
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', srtUrl, false);  // sync for simplicity in timeline rendering
+    try { xhr.send(); } catch(e) { return; }
+    if (xhr.status !== 200) return;
+    const srtText = xhr.responseText;
+    const cues = parseSrt(srtText);
+    for (let i = 0; i < cues.length; i++) {
+      const c = cues[i];
+      const left = c.startSec * pxPerSec;
+      const width = (c.endSec - c.startSec) * pxPerSec;
+      subsHtml += '<div class="timeline-sub-block" style="left:' + left + 'px;width:' + width + 'px" title="' + escHtml(c.text) + '">'
+        + escHtml(c.text.substring(0, 80)) + '</div>';
+    }
+  })();
+  const subsTrackHtml = subsHtml ? '<div class="timeline-subs" style="min-width:' + (labelColW + trackAreaWidth) + 'px;height:22px;position:relative;margin-left:' + labelColW + 'px">' + subsHtml + '</div>' : '';
+
   // Build tracks (layers 0-4) — blocks use time_in for left
   let tracksHtml = '';
   for (let layer = 0; layer <= 4; layer++) {
@@ -4611,14 +4659,31 @@ function renderV3Timeline() {
       if (assetLayer !== layer) return;
       const startX = (a.time_in || 0) * pxPerSec;
       const width = (a.duration_secs || 5) * pxPerSec;
-      const label = a.path === '__caption__'
-        ? (a.caption_phrases && a.caption_phrases[0] ? ('💬 ' + a.caption_phrases[0].text.substring(0, 40) + (a.caption_phrases[0].text.length > 40 ? '…' : '')) : '💬 caption')
-        : (a.path ? a.path.split('/').pop().replace(/\.(jpg|png|jpeg|webp)$/i, '') : 'asset-' + ai);
+      // Short human-readable label from filename
+      let label;
+      if (a.path === '__caption__') {
+        label = a.caption_phrases && a.caption_phrases[0] ? ('💬 ' + a.caption_phrases[0].text.substring(0, 30)) : '💬 caption';
+      } else if (a.path) {
+        const base = a.path.split('/').pop().replace(/\.(jpg|png|jpeg|mp4|webp)$/i, '');
+        // Strip version suffix (_v1, _v8, etc)
+        const noVer = base.replace(/_v\d+$/, '');
+        // Strip leading scene prefix for brevity (s1_, s8_, etc)
+        const noScene = noVer.replace(/^s\d[b]?_/, '');
+        // Replace underscores with middle-dot for style
+        label = noScene.replace(/_/g, ' · ');
+        // If it's a placa, prefix with 📋
+        if (base.startsWith('placa_') || base.includes('placa')) {
+          label = '📋 ' + label;
+        }
+      } else {
+        label = 'asset-' + ai;
+      }
       const selCls = (_selectedAssetIndex === ai) ? ' selected' : '';
       const apprCls = a.approved ? ' approved' : '';
+      const typeBorder = a.type === 'video' ? 'border-left:3px solid var(--gold);' : a.type === 'still' ? 'border-left:3px solid #60a5fa;' : '';
       blocksHtml +=
         '<div class="timeline-block' + apprCls + selCls + '" data-asset-index="' + ai + '"' +
-          ' style="left:' + startX + 'px; width:' + width + 'px"' +
+          ' style="left:' + startX + 'px; width:' + width + 'px;' + typeBorder + '"' +
           ' title="' + escHtml(a.path || '') + ' — ' + (a.duration_secs || 0).toFixed(1) + 's @' + (a.time_in || 0).toFixed(1) + 's">' +
           (a.type === 'video' ? '<span class="timeline-block-icon-video">▶</span>' : a.type === 'audio' ? '<span class="timeline-block-icon-video">🎵</span>' : '<img class="timeline-block-icon" src="' + escHtml(imageUrl(a.path || '')) + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'"><span class="timeline-block-icon-video" style="display:none">🖼</span>') +
           escHtml(label) +
@@ -4637,7 +4702,8 @@ function renderV3Timeline() {
     '<div class="timeline-tracks">' +
       '<div class="timeline-tracks-inner" style="position:relative;min-width:' + (labelColW + trackAreaWidth) + 'px;height:' + (28 + 5 * 52) + 'px">' +
         rulerHtml +
-        '<div style="margin-top:28px;">' +
+        subsTrackHtml +
+        '<div style="margin-top:50px;">' +
           tracksHtml +
         '</div>' +
         '<div class="timeline-playhead" style="left:' + labelColW + 'px;top:0;height:100%"></div>' +

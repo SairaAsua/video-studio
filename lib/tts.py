@@ -35,24 +35,22 @@ def get_audio_dir(slug: str) -> Path:
     return d
 
 
-def synthesize_edge(text: str, output_path: Path, voice: str = DEFAULT_VOICE) -> float:
-    """Synthesize text with edge-tts. Returns duration in seconds."""
+def synthesize_edge(text: str, output_path: Path, voice: str = DEFAULT_VOICE, words_per_cue: int = 8) -> float:
+    """Synthesize text with edge-tts. Returns duration in seconds.
+    Also generates an SRT subtitle file alongside the MP3 for timeline alignment."""
     import shutil
     edge_bin = shutil.which("edge-tts") or shutil.which("edge_tts")
+    srt_path = output_path.with_suffix('.srt')
+    
+    args = ["--voice", voice, "--text", text, "--write-media", str(output_path),
+            "--write-subtitles", str(srt_path), "--words-in-cue", str(words_per_cue)]
+    
     if edge_bin is None:
-        # Fallback: run as Python module from the active venv
-        result = subprocess.run(
-            [sys.executable, "-m", "edge_tts",
-             "--voice", voice,
-             "--text", text,
-             "--write-media", str(output_path)],
-            capture_output=True, text=True, timeout=60,
-        )
+        result = subprocess.run([sys.executable, "-m", "edge_tts"] + args,
+            capture_output=True, text=True, timeout=60)
     else:
-        result = subprocess.run(
-            [edge_bin, "--voice", voice, "--text", text, "--write-media", str(output_path)],
-            capture_output=True, text=True, timeout=60,
-        )
+        result = subprocess.run([edge_bin] + args,
+            capture_output=True, text=True, timeout=60)
     if result.returncode != 0:
         raise RuntimeError(f"edge-tts failed: {result.stderr}")
 

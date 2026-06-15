@@ -38,7 +38,7 @@ DEFAULT_H = 1080
 #     `z='min(max(zoom,pzoom)+step, max_zoom)'` works with `d=1` and
 #     scales with `-framerate` (more fps → more steps per second).
 #   - Source: https://video.stackexchange.com/q/18518
-FRAMES = 1
+FRAMES = 3  # output frames per input image chunk. higher = smoother interpolation.
 
 # Motion speed: zoom increment per output frame. 0.0005 ≈ 1.0 → 1.10 over 200 frames (~6.7s @ 30fps).
 # 0.0003 = slower, more contemplative. 0.0008 = punchier.
@@ -65,8 +65,16 @@ def zoom_in(w=DEFAULT_W, h=DEFAULT_H, speed=STD_ZOOM, frames=FRAMES):
     )
 
 
-def zoom_out(w=DEFAULT_W, h=DEFAULT_H, speed=STD_ZOOM, frames=FRAMES):
-    """Pull back: zoom from 1.12 down to 1.0. Context reveals."""
+def zoom_out(w=DEFAULT_W, h=DEFAULT_H, speed=None, duration_secs=None, frames=FRAMES):
+    """Pull back: zoom from 1.12 down to 1.0. Context reveals.
+    If duration_secs given, auto-calculates speed so last frame lands at zoom=1.0
+    (exact match with video first frame — no transition jump)."""
+    if speed is None:
+        if duration_secs and duration_secs > 0:
+            chunks = max(1, int(duration_secs * 30 / frames))
+            speed = 0.12 / chunks  # 1.12 → 1.0 in exactly the still's duration
+        else:
+            speed = STD_ZOOM
     return (
         f"scale={int(w*1.5)}:{int(h*1.5)}:force_original_aspect_ratio=increase,"
         f"crop={int(w*1.5)}:{int(h*1.5)},"
@@ -160,6 +168,7 @@ def parallax_rl(w=DEFAULT_W, h=DEFAULT_H, speed=STD_ZOOM, drift=STD_DRIFT, frame
 PRESETS = {
     "zoom_in": zoom_in,
     "zoom_out": zoom_out,
+    "zoom_out_slow": lambda w=1920, h=1080: zoom_out(w=w, h=h, speed=0.00035),
     "drift_left": drift_left,
     "drift_right": drift_right,
     "push_in_left": push_in_left,
@@ -169,9 +178,12 @@ PRESETS = {
 }
 
 
-def get_motion(name: str, w: int = DEFAULT_W, h: int = DEFAULT_H) -> str:
-    """Look up a motion preset by name. Falls back to zoom_in."""
+def get_motion(name: str, w: int = DEFAULT_W, h: int = DEFAULT_H, duration_secs: float = 0.0) -> str:
+    """Look up a motion preset by name. Falls back to zoom_in.
+    Passes duration_secs to zoom_out for auto-calculated speed."""
     fn = PRESETS.get(name, zoom_in)
+    if name == "zoom_out" and duration_secs > 0:
+        return fn(w=w, h=h, duration_secs=duration_secs)
     return fn(w=w, h=h)
 
 

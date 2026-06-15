@@ -3,3 +3,28 @@ __pycache__/
 .venv/
 MEMORY.md
 .hermes-tmp/
+
+# Project output — too large, not version-controlled
+projects/
+
+# Renders and exports (large binaries)
+renders/
+exports/
+*.mp4
+*.mp3
+*.wav
+
+# Backups
+*.bak
+*.bak-*
+*.orig
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
