@@ -28,3 +28,8 @@ exports/
 # OS
 .DS_Store
 Thumbs.db
+
+# Python
+.coverage
+htmlcov/
+.pytest_cache/
