@@ -32,6 +32,14 @@ private project contents and credentials outside Git. The app menu/desktop can
 invoke this helper with that saved choice. New hosts must independently verify
 their runtime, provider authentication and human authorization.
 
+For xAI OAuth, set `HERMES_HOME` to the authorized Hermes profile and
+`HERMES_AGENT_ROOT` to the existing Hermes source checkout in the ignored local
+`.env`. The generation bridge uses Hermes's credential pool and refresh resolver;
+it does not copy tokens or read a stale singleton from `auth.json`. An explicit
+`XAI_API_KEY` remains supported. Verify access with a read-only models request;
+successful authentication does not prove generation credit or authorize spending.
+Never place credential values in commands, source, logs or this repository.
+
 For agents, use `scripts/request_video.py` directly with an explicit project,
 purpose and stable UUID. Read `reference/workbench-contract.txt` for receipt
 semantics and `skills/video-workbench/SKILL.md` for the neutral workflow. A

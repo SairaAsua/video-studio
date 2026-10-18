@@ -5,26 +5,42 @@ from pathlib import Path
 
 BASE = "https://api.x.ai/v1"
 
-def _token():
-    """Resolve xAI bearer token. Prefers XAI_API_KEY env var, then falls back
-    to Hermes auth.json xai-oauth tokens."""
-    if os.environ.get("XAI_API_KEY"):
-        return os.environ["XAI_API_KEY"]
-    auth_path = Path(os.environ.get('HERMES_HOME', os.path.expanduser('~/.hermes'))) / 'auth.json'
-    auth = auth_path.read_text()
-    store = json.loads(auth)
-    return store['providers']['xai-oauth']['tokens']['access_token']
+def _credentials():
+    """Keep OAuth selection/refresh in Hermes, without copying its auth store."""
+    explicit_key = os.environ.get("XAI_API_KEY", "").strip()
+    if explicit_key:
+        return {"api_key": explicit_key,
+                "base_url": os.environ.get("XAI_BASE_URL", BASE).rstrip("/"),
+                "user_agent": "Video-Studio"}
+    agent_root = Path(os.environ.get("HERMES_AGENT_ROOT", Path.home() / ".hermes/hermes-agent"))
+    if str(agent_root) not in sys.path:
+        sys.path.insert(0, str(agent_root))
+    try:
+        from tools.xai_http import resolve_xai_http_credentials, hermes_xai_user_agent
+    except ImportError:
+        raise RuntimeError("Hermes credential resolver unavailable; configure HERMES_AGENT_ROOT or XAI_API_KEY") from None
+    credentials = resolve_xai_http_credentials()
+    if not credentials.get("api_key"):
+        raise RuntimeError("No xAI credential available in the selected Hermes profile")
+    return {**credentials, "user_agent": hermes_xai_user_agent()}
 
-def _headers():
-    return {"Authorization": f"Bearer {_token()}", "Content-Type": "application/json"}
+
+def _api_request(method, path, **kwargs):
+    # Resolve per request so token rotation and pool selection are respected.
+    # Do not automatically retry a paid POST after an ambiguous response.
+    credentials = _credentials()
+    return requests.request(method, credentials["base_url"].rstrip("/") + path,
+                            headers={"Authorization": "Bearer " + credentials["api_key"],
+                                     "Content-Type": "application/json",
+                                     "User-Agent": credentials["user_agent"]}, **kwargs)
 
 # ── Image ──
 
 def generate_image(prompt, output_dir):
     """POST /v1/images/generations → download → save."""
-    r = requests.post(f"{BASE}/images/generations", json={
+    r = _api_request("POST", "/images/generations", json={
         "model": "grok-imagine-image", "prompt": prompt, "n": 1, "response_format": "url"
-    }, headers=_headers(), timeout=120)
+    }, timeout=120)
     if r.status_code != 200:
         return False, f"xAI API {r.status_code}: {r.text[:200]}"
     url = r.json().get('data', [{}])[0].get('url')
@@ -69,7 +85,7 @@ def generate_video(prompt, output_dir, image_path=None, duration=8, aspect_ratio
         except Exception as e:
             return False, f"Upload to catbox.moe error: {e}"
 
-    r = requests.post(f"{BASE}/videos/generations", json=body, headers=_headers(), timeout=30)
+    r = _api_request("POST", "/videos/generations", json=body, timeout=30)
     if r.status_code != 200:
         return False, f"xAI video API {r.status_code}: {r.text[:300]}"
 
@@ -80,7 +96,7 @@ def generate_video(prompt, output_dir, image_path=None, duration=8, aspect_ratio
     # Poll GET /v1/videos/{request_id}
     for attempt in range(45):  # up to ~7.5 min
         time.sleep(10)
-        pr = requests.get(f"{BASE}/videos/{rid}", headers=_headers(), timeout=30)
+        pr = _api_request("GET", f"/videos/{rid}", timeout=30)
         if pr.status_code != 200:
             continue
         data = pr.json()
@@ -130,7 +146,7 @@ def extend_video(source_path, prompt, output_dir, duration_secs=4):
         "duration": dur,
     }
 
-    r = requests.post(f"{BASE}/videos/extensions", json=body, headers=_headers(), timeout=30)
+    r = _api_request("POST", "/videos/extensions", json=body, timeout=30)
     if r.status_code != 200:
         return False, f"xAI video extend API {r.status_code}: {r.text[:300]}"
 
@@ -141,7 +157,7 @@ def extend_video(source_path, prompt, output_dir, duration_secs=4):
     # Poll GET /v1/videos/{request_id} — exact log format required
     for attempt in range(45):  # up to ~7.5 min
         time.sleep(10)
-        pr = requests.get(f"{BASE}/videos/{rid}", headers=_headers(), timeout=30)
+        pr = _api_request("GET", f"/videos/{rid}", timeout=30)
         if pr.status_code != 200:
             continue
         data = pr.json()
@@ -182,7 +198,7 @@ def edit_video(source_path, prompt, output_dir):
         "video": f"data:video/mp4;base64,{b64}"
     }
 
-    r = requests.post(f"{BASE}/videos/edits", json=body, headers=_headers(), timeout=30)
+    r = _api_request("POST", "/videos/edits", json=body, timeout=30)
     if r.status_code != 200:
         return False, f"xAI video API {r.status_code}: {r.text[:300]}"
 
@@ -193,7 +209,7 @@ def edit_video(source_path, prompt, output_dir):
     # Poll GET /v1/videos/{request_id}
     for attempt in range(45):  # up to ~7.5 min
         time.sleep(10)
-        pr = requests.get(f"{BASE}/videos/{rid}", headers=_headers(), timeout=30)
+        pr = _api_request("GET", f"/videos/{rid}", timeout=30)
         if pr.status_code != 200:
             continue
         data = pr.json()
@@ -253,11 +269,11 @@ def edit_image(source_path, prompt, output_dir, slug):
 
     public_url = f"http://127.0.0.1:8900/api/project/{slug}/media/{relative_path}"
 
-    r = requests.post(f"{BASE}/images/edits", json={
+    r = _api_request("POST", "/images/edits", json={
         "model": "grok-imagine-image-quality",
         "prompt": prompt,
         "image": {"url": public_url, "type": "image_url"}
-    }, headers=_headers(), timeout=60)
+    }, timeout=60)
     if r.status_code != 200:
         return {"ok": False, "error": f"xAI edit API {r.status_code}: {r.text[:200]}"}
 
@@ -287,13 +303,11 @@ def edit_image(source_path, prompt, output_dir, slug):
 
 def generate_script(sources_text, instructions):
     """Call xAI chat completions to generate a video narration script.
-    Uses the OAuth token from auth.json. Returns (ok, script_text) tuple.
+    Uses the managed xAI credential. Returns (ok, script_text) tuple.
     """
     import json, requests, sys, os
     from pathlib import Path
     
-    token = _token()  # reuse existing _token() function
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     
     system_prompt = (
         "You are a video script writer. Given these sources and instructions, "
@@ -311,7 +325,7 @@ def generate_script(sources_text, instructions):
         "temperature": 0.7,
     }
     
-    r = requests.post("https://api.x.ai/v1/chat/completions", json=body, headers=headers, timeout=120)
+    r = _api_request("POST", "/chat/completions", json=body, timeout=120)
     if r.status_code != 200:
         return False, f"xAI chat API {r.status_code}: {r.text[:300]}"
     
