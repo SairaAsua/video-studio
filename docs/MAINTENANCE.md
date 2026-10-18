@@ -37,7 +37,12 @@ For xAI OAuth, set `HERMES_HOME` to the authorized Hermes profile and
 `.env`. The generation bridge uses Hermes's credential pool and refresh resolver;
 it does not copy tokens or read a stale singleton from `auth.json`. An explicit
 `XAI_API_KEY` remains supported. Verify access with a read-only models request;
-successful authentication does not prove generation credit or authorize spending.
+successful authentication does not prove model entitlement or remaining quota.
+OAuth video uses the existing subscription according to Hermes
+(https://hermes-agent.nousresearch.com/docs/guides/xai-grok-oauth). Set
+`VIDEO_STUDIO_BILLING_MODE=subscription` locally to forbid paid-key fallback;
+API price quotes are reference only for this mode. API-key spending still needs
+concrete human cost authorization.
 Never place credential values in commands, source, logs or this repository.
 
 For agents, use `scripts/request_video.py` directly with an explicit project,

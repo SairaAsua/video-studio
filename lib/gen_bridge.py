@@ -5,16 +5,17 @@ from pathlib import Path
 
 BASE = "https://api.x.ai/v1"
 
-def _credentials(credential_identity=None):
+def _credentials(credential_identity=None, oauth_only=False):
     """Keep OAuth selection/refresh in Hermes, without copying its auth store."""
     explicit_key = os.environ.get("XAI_API_KEY", "").strip()
-    if explicit_key:
+    if explicit_key and not oauth_only:
         identity = 'explicit-' + hashlib.sha256(explicit_key.encode()).hexdigest()
         if credential_identity and credential_identity != identity:
             raise RuntimeError('The generation belongs to a different xAI credential')
         return {"api_key": explicit_key,
                 "base_url": os.environ.get("XAI_BASE_URL", BASE).rstrip("/"),
-                "user_agent": "Video-Studio", "credential_identity": identity}
+                "user_agent": "Video-Studio", "credential_identity": identity,
+                "provider": "xai", "auth_type": "api_key"}
     agent_root = Path(os.environ.get("HERMES_AGENT_ROOT", Path.home() / ".hermes/hermes-agent"))
     if str(agent_root) not in sys.path:
         sys.path.insert(0, str(agent_root))
@@ -34,8 +35,11 @@ def _credentials(credential_identity=None):
         if matches:
             credentials = {**credentials, 'api_key': entry.runtime_api_key,
                            'base_url': entry.runtime_base_url or BASE,
+                           'auth_type': entry.auth_type,
                            'credential_identity': identity}
             break
+    if oauth_only and (credentials.get('provider') != 'xai-oauth' or credentials.get('auth_type') != 'oauth'):
+        raise RuntimeError('Subscription mode requires an OAuth grant; paid API-key fallback is forbidden')
     if not credentials.get('credential_identity'):
         credentials['credential_identity'] = 'explicit-' + hashlib.sha256(credentials.get('api_key', '').encode()).hexdigest()
     if credential_identity and credentials.get('credential_identity') != credential_identity:

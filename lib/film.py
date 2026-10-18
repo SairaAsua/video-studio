@@ -108,6 +108,7 @@ def plan_export(project: Path, board: dict, film: str, *, width=1280, height=720
         'sources':sources,'music_duration_secs':music_duration,
         'storyboard_sha256':hashlib.sha256(json.dumps(board,sort_keys=True).encode()).hexdigest(),
         'renderer_sha256':digest_file(Path(__file__).with_name('assemble.py')),
+        'soundtrack_renderer_sha256':digest_file(Path(__file__).with_name('music.py')),
         'review_status':'technical_preview_needs_human_playback'}
     identifier = hashlib.sha256(json.dumps(payload,sort_keys=True).encode()).hexdigest()[:24]
     return {**payload,'job_id':identifier}
@@ -194,6 +195,9 @@ def run_export(project: Path, identifier: str) -> dict:
                 if digest_file(media_file(project, relative)) != stamp['sha256']:
                     raise ValueError('An export source changed while rendering')
             soundtrack=render_soundtrack(project,plan['film'],plan['soundtrack'])
+            record['soundtrack_output']={'path':str(soundtrack.relative_to(project)),
+                'sha256':digest_file(soundtrack),
+                'render_metadata':json.loads(soundtrack.with_suffix('.wav.json').read_text())}
             # Relative, numeric filenames avoid concat-demuxer quoting ambiguities.
             listing=work/'cuts.txt';listing.write_text(''.join(f"file '{p.name}'\n" for p in rendered))
             picture=work/'picture.mp4'

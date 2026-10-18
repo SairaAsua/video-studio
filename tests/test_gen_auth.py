@@ -56,8 +56,8 @@ def test_ambiguous_paid_submission_is_never_retried(monkeypatch):
 
 def test_async_job_uses_same_pool_entry_after_rotation_and_refresh(monkeypatch):
     install_resolver(monkeypatch, lambda: {'api_key': 'other-account', 'base_url': bridge.BASE})
-    first=SimpleNamespace(id='issuing-entry',runtime_api_key='first-access',runtime_base_url=bridge.BASE)
-    other=SimpleNamespace(id='other-entry',runtime_api_key='other-account',runtime_base_url=bridge.BASE)
+    first=SimpleNamespace(id='issuing-entry',runtime_api_key='first-access',runtime_base_url=bridge.BASE,auth_type='oauth')
+    other=SimpleNamespace(id='other-entry',runtime_api_key='other-account',runtime_base_url=bridge.BASE,auth_type='oauth')
     sys.modules['agent.credential_pool'].load_pool=lambda _: SimpleNamespace(entries=lambda:[first,other])
     import hashlib
     identity=hashlib.sha256(b'/test/hermes:issuing-entry').hexdigest()
@@ -67,3 +67,14 @@ def test_async_job_uses_same_pool_entry_after_rotation_and_refresh(monkeypatch):
     assert c['api_key']=='refreshed-access' and c['credential_identity']==identity
     with pytest.raises(RuntimeError,match='issuing'):
         bridge._credentials(credential_identity='unavailable-entry')
+
+
+def test_subscription_ignores_paid_key_and_rejects_resolver_api_fallback(monkeypatch):
+    install_resolver(monkeypatch,lambda:{'provider':'xai','api_key':'paid-key','base_url':bridge.BASE})
+    monkeypatch.setenv('XAI_API_KEY','another-paid-key')
+    with pytest.raises(RuntimeError,match='fallback is forbidden'):
+        bridge._credentials(oauth_only=True)
+    entry=SimpleNamespace(id='subscription-entry',runtime_api_key='oauth-token',runtime_base_url=bridge.BASE,auth_type='oauth')
+    sys.modules['tools.xai_http'].resolve_xai_http_credentials=lambda:{'provider':'xai-oauth','api_key':'oauth-token','base_url':bridge.BASE}
+    sys.modules['agent.credential_pool'].load_pool=lambda _:SimpleNamespace(entries=lambda:[entry])
+    assert bridge._credentials(oauth_only=True)['api_key']=='oauth-token'

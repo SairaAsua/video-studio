@@ -97,8 +97,15 @@ the presence of the approval API, OAuth or a prepared receipt is not consent.
 The browser shows prompt, input images, model, output count, price basis and
 parameters before its explicit cost confirmation. Withdrawal clears unused
 approval. Quotes expire; update/verify the documented pricing before later work.
-Estimates use published USD API list prices, exclude taxes and do not prove
-OAuth entitlement/credit or actual billing.
+For API-key billing, estimates use published USD API list prices and exclude
+taxes. Subscription mode uses only an actual xai-oauth grant (auth_type oauth):
+API-key fallback and credit purchases are forbidden. Its API price is reference
+only, not an additional cash charge quote. A generation requested within the
+human-authorized project scope may use that existing subscription quota without
+a new cash approval. Entitlement/quota denial stops the job; never switch to a
+paid key to bypass it. VIDEO_STUDIO_BILLING_MODE selects the local default; a
+subscription job is prepared as ready_subscription, while paid_api still waits
+for explicit cost authorization.
 
 Each run performs at most one submission or one status/download recovery.
 The external-submit intention is saved before its POST; the remote request ID
@@ -117,3 +124,12 @@ are decoded and videos probed before completion. Prompt, reference hashes,
 cost authorization, remote ID and output hash remain in ignored project state.
 Registering the candidate appends a draft reference version or a retained take;
 it never selects the result or changes another edit. Inspect before accepting.
+
+Soundtrack headroom
+Each input clock is normalized to its decoded-audio zero before source trims,
+including Opus pre-skip. Assembly uses floating-point PCM to preserve source
+peaks, measures true peak, and applies one constant attenuation only when needed
+to retain at least 2 dB of headroom. There is no speed change, compressor, vocal
+reconstruction or automatic crossfade. The 24-bit working WAV has a sidecar with
+source/renderer hashes, measured peaks and gain. Invalid cache outputs and old
+renders are preserved. Film provenance links the actual soundtrack render.

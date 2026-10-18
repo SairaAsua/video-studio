@@ -137,7 +137,7 @@ guard(async()=>{const projects=await api('/api/projects');$('project').replaceCh
 
 function generationField(node){node.removeEventListener('input',dirty);node.removeEventListener('change',dirty);return node;}
 function renderGeneration(p){
- p.append(el('h3','Preparar una generación','section-label'),el('p','Revisá el pedido, las referencias y su costo. Preparar conserva el plan sin enviarlo; cada generación necesita autorización humana.','note'));
+ p.append(el('h3','Preparar una generación','section-label'),el('p','Revisá el pedido y las referencias. OAuth usa la cuota de tu suscripción; el acceso con clave de API requiere autorizar su costo.','note'));
  const targets=[[JSON.stringify({type:'shot',scene_id:shot().id}),`Toma ${shot().shot_id||shot().id}`]];
  for(const kind of ['characters','locations'])for(const [key,item] of Object.entries(state.board.continuity?.[kind]||{})){
   const version=item.versions.at(-1);targets.push([JSON.stringify({type:'reference',kind,key,version:version.id}),item.name+' · nueva imagen desde '+version.id]);
@@ -163,17 +163,17 @@ function renderGeneration(p){
  p.append(button('Preparar pedido y ver costo',async()=>{
   if(state.dirty)throw Error('Guardá los cambios del proyecto antes de preparar el pedido.');
   const result=await api(`${base()}/generations/plan`,{revision:state.revision,target:JSON.parse(target.value),media_type:type.value,model:model.value,prompt:prompt.value,duration:Number(duration.value),variant:variant.value,aspect_ratio:aspect.value,input_references:[...refs.querySelectorAll('input:checked')].map(n=>JSON.parse(n.value))},'POST');
-  await refreshGenerationJobs(list);message(`Pedido preparado · USD ${result.plan.quote.estimated_cost_usd}. Todavía no fue enviado.`);
+  await refreshGenerationJobs(list);message(result.plan.quote.billing_mode==='subscription'?'Pedido preparado para la cuota OAuth de tu suscripción. Todavía no fue enviado.':`Pedido preparado · USD ${result.plan.quote.estimated_cost_usd}. Todavía no fue enviado.`);
  },'primary'));
  const list=el('div');list.id='generation-jobs';p.append(el('h3','Pedidos guardados','section-label'),button('Actualizar estado local',()=>refreshGenerationJobs(list),'secondary'),list);update();guard(()=>refreshGenerationJobs(list));
 }
 async function refreshGenerationJobs(container){
  const slug=state.slug;const records=await api(`${base()}/generations`);if(!container.isConnected||state.slug!==slug)return;container.replaceChildren();
- const names={withdrawn:'Retirado antes del envío',awaiting_approval:'Falta autorización',approved:'Autorizado, pendiente de envío',submitting:'Enviando',submission_unknown:'Envío incierto · revisar antes de continuar',pending:'Pedido guardado · consultar al proveedor',completed:'Candidato descargado',provider_failed:'El proveedor informó un fallo',download_failed:'Descarga pendiente de recuperar',rejected:'Pedido rechazado por el proveedor'};
+ const names={ready_subscription:'Listo para generar con la suscripción',withdrawn:'Retirado antes del envío',awaiting_approval:'Falta autorización',approved:'Autorizado, pendiente de envío',submitting:'Enviando',submission_unknown:'Envío incierto · revisar antes de continuar',pending:'Pedido guardado · consultar al proveedor',completed:'Candidato descargado',provider_failed:'El proveedor informó un fallo',download_failed:'Descarga pendiente de recuperar',rejected:'Pedido rechazado por el proveedor'};
  for(const job of records.reverse()){
   const card=el('div',undefined,'version-card');card.dataset.generationJob=job.job_id;const plan=job.plan;
-  card.append(el('strong',names[job.status]||job.status),el('p',`${plan.model} · ${plan.parameters.duration?plan.parameters.duration+' s · ':''}USD ${plan.quote.estimated_cost_usd}`),el('small',job.job_id));
-  const details=el('details');details.append(el('summary','Ver pedido y costo'),el('p',plan.prompt),el('p',`${plan.quote.input_images} referencias · ${plan.quote.outputs} resultado · un intento. Estimación de tarifa API; crédito OAuth no comprobado; impuestos aparte.`,'note'));
+  card.append(el('strong',names[job.status]||job.status),el('p',`${plan.model} · ${plan.parameters.duration?plan.parameters.duration+' s · ':''}${plan.quote.billing_mode==='subscription'?'Cuota de suscripción OAuth':'USD '+plan.quote.estimated_cost_usd}`),el('small',job.job_id));
+  const details=el('details');details.append(el('summary','Ver pedido y costo'),el('p',plan.prompt),el('p',`${plan.quote.input_images} referencias · ${plan.quote.outputs} resultado · un intento. ${plan.quote.billing_mode==='subscription'?'Se usa exclusivamente OAuth; no se compra crédito ni se cambia a una clave de pago. La tarifa API es sólo referencia.':'Estimación de tarifa API; impuestos aparte.'}`,'note'));
   const pricing=el('a','Tarifa y fecha de consulta');pricing.href=plan.quote.pricing_url;pricing.target='_blank';pricing.rel='noopener';details.append(pricing,el('small',plan.quote.pricing_checked));
   for(const r of plan.input_references){const img=el('img');img.src=media(r.path);img.alt=r.name+' '+r.version;img.style.maxWidth='110px';details.append(img);}
   card.append(details);if(job.error)card.append(el('p',job.error,'note'));
@@ -182,10 +182,11 @@ async function refreshGenerationJobs(container){
    await api(`${base()}/generations/${job.job_id}/approve`,{plan_sha256:plan.plan_sha256,max_cost_usd:plan.quote.estimated_cost_usd,statement:`Autorización humana desde la mesa para ${job.job_id}: un intento por USD ${plan.quote.estimated_cost_usd}, con el prompt y referencias mostrados.`},'POST');
    await api(`${base()}/generations/${job.job_id}/run`,{},'POST');await refreshGenerationJobs(container);message('Envío solicitado. Actualizá el estado local; para recuperar se consulta el mismo pedido.');
   },'primary'));
+  else if(job.status==='ready_subscription')card.append(button('Generar con la suscripción',async()=>{await api(`${base()}/generations/${job.job_id}/run`,{},'POST');await refreshGenerationJobs(container);message('Generación solicitada con OAuth. Actualizá el estado para recuperar este mismo pedido.');},'primary'));
   else if(job.status==='approved'||job.remote_request_id)card.append(button(job.status==='approved'?'Enviar pedido autorizado':'Consultar / recuperar este pedido',async()=>{await api(`${base()}/generations/${job.job_id}/run`,{},'POST');await refreshGenerationJobs(container);message('Consulta iniciada. Actualizá el estado local en unos segundos.');},'secondary'));
   if(job.status==='submission_unknown')card.append(el('p','No se vuelve a enviar automáticamente. Revisá el pedido en la cuenta del proveedor para evitar un cobro duplicado.','note'));
   if(job.status==='completed'&&job.output){const m=el(plan.media_type==='video'?'video':'img');m.src=media(job.output);m.style.maxWidth='100%';if(plan.media_type==='video'){m.controls=true;m.muted=true;}else m.alt='Candidato generado pendiente de revisión';card.append(m,button('Agregar candidato a la mesa',async()=>{if(state.dirty)throw Error('Guardá los cambios antes de agregar el candidato.');await api(`${base()}/generations/${job.job_id}/register`,{revision:state.revision},'POST');await load(state.slug);message('Candidato agregado. Revisalo y elegí su versión o toma; las selecciones anteriores se conservan.');},'primary'));}
-  if(['awaiting_approval','approved'].includes(job.status))card.append(button('Retirar pedido sin enviar',async()=>{await api(`${base()}/generations/${job.job_id}/withdraw`,{},'POST');await refreshGenerationJobs(container);},'small-action'));
+  if(['awaiting_approval','approved','ready_subscription'].includes(job.status))card.append(button('Retirar pedido sin enviar',async()=>{await api(`${base()}/generations/${job.job_id}/withdraw`,{},'POST');await refreshGenerationJobs(container);},'small-action'));
   container.append(card);
  }
  if(!records.length)container.append(el('p','No hay pedidos preparados todavía.','note'));

@@ -226,3 +226,16 @@ def test_invalid_provider_download_is_retained_and_recovery_keeps_remote_request
     r=gen.run_generation(project,p['job_id'],transport=t)
     assert r['status']=='completed' and len(r['provider_originals'])==2
     assert [c[0] for c in t.calls]==['POST','GET','GET']
+
+
+def test_subscription_jobs_never_fall_back_to_api_key_or_need_cash_approval(project):
+    p=plan(project,billing_mode='subscription');r=gen.prepare_generation(project,p)
+    assert r['status']=='ready_subscription' and not p['quote']['additional_cash_spend_authorized']
+    t=Transport(project);t.credentials={'provider':'xai','auth_type':'api_key'}
+    with pytest.raises(ValueError,match='paid API'):
+        gen.run_generation(project,p['job_id'],transport=t)
+    assert not t.calls and not gen.status(project,p['job_id'])['generation_submitted']
+    t.credentials={'provider':'xai-oauth','auth_type':'oauth'}
+    assert gen.run_generation(project,p['job_id'],transport=t)['status']=='pending'
+    assert gen.run_generation(project,p['job_id'],transport=t)['status']=='completed'
+    assert [c[0] for c in t.calls]==['POST','GET']

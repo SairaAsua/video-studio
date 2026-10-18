@@ -221,6 +221,7 @@ class GenerationPlan(StrictModel):
     aspect_ratio: Literal['16:9', '1:1', '3:4', '9:16'] = '16:9'
     input_references: list[GenerationReference] | None = Field(default=None, max_length=5)
     variant: str = Field(default='main', min_length=1, max_length=100)
+    billing_mode: Literal['paid_api', 'subscription'] | None = None
 
 
 class GenerationApproval(StrictModel):
@@ -531,6 +532,8 @@ def install_workbench(app, project_dir, notify):
             check(path, body.revision)
             board = copy.deepcopy(board)
         params = body.model_dump(exclude={'revision'})
+        import os
+        params['billing_mode'] = body.billing_mode or os.environ.get('VIDEO_STUDIO_BILLING_MODE', 'paid_api')
         params['target'] = body.target.model_dump(exclude_none=True)
         try:
             plan = await asyncio.to_thread(plan_generation, project, board, **params)

@@ -71,7 +71,9 @@ def version_of(board, kind, key, version):
 
 
 def plan_generation(project, board, *, target, prompt, media_type, model,
-                    duration=3, aspect_ratio='16:9', input_references=None, variant='main'):
+                    duration=3, aspect_ratio='16:9', input_references=None, variant='main', billing_mode='paid_api'):
+    if billing_mode not in {'paid_api', 'subscription'}:
+        raise ValueError('Choose API billing or OAuth subscription quota')
     if not prompt.strip() or len(prompt) > 40000 or len(variant) > 100:
         raise ValueError('Provide a prompt and a short take variant')
     if media_type not in {'image', 'video'} or aspect_ratio not in {'16:9', '1:1', '3:4', '9:16'}:
@@ -140,6 +142,9 @@ def plan_generation(project, board, *, target, prompt, media_type, model,
              'pricing_checked': PRICING_CHECKED, 'valid_until': PRICING_VALID_UNTIL,
              'basis': 'published API list price; OAuth credit/entitlement not verified; taxes excluded',
              'attempts': 1, 'public_storage_requested': False}
+    quote.update(billing_mode=billing_mode, api_list_price_usd=str(cost),
+                 additional_cash_spend_authorized=False,
+                 billing_basis='OAuth subscription quota; no API-key fallback or credit purchase' if billing_mode=='subscription' else quote['basis'])
     # Editorial selections and previously registered candidates must not change
     # the identity of an otherwise identical generation request.
     spec_keys = ('id', 'name', 'appearance', 'outfit', 'es', 'en') if target['type'] == 'reference' else (
@@ -169,7 +174,8 @@ def prepare_generation(project, plan):
             if record['plan'] != plan:
                 raise ValueError('Generation content mismatch')
             return record
-        record = {'job_id': plan['job_id'], 'plan': plan, 'status': 'awaiting_approval',
+        record = {'job_id': plan['job_id'], 'plan': plan,
+                  'status': 'ready_subscription' if plan['quote']['billing_mode']=='subscription' else 'awaiting_approval',
                   'created_at': now().isoformat(), 'remote_request_id': None,
                   'generation_submitted': False}
         atomic(path, record)
@@ -201,6 +207,8 @@ def approve(project, job_id, *, plan_sha256, max_cost_usd, statement):
     path = path_for(project, job_id)
     with lock_job(path):
         record = json.loads(path.read_text()); plan = record['plan']
+        if plan['quote'].get('billing_mode') == 'subscription':
+            raise ValueError('Subscription jobs use OAuth quota; they do not authorize cash spend')
         if plan_sha256 != plan['plan_sha256']:
             raise ValueError('Approval does not match the displayed plan')
         amount = Decimal(str(max_cost_usd))
@@ -232,8 +240,8 @@ def withdraw(project, job_id):
 
 class XaiTransport:
     """Credentials stay in memory; polling stays on the issuing account."""
-    def __init__(self, credential_identity=None):
-        self.credentials = _credentials(credential_identity=credential_identity)
+    def __init__(self, credential_identity=None, oauth_only=False):
+        self.credentials = _credentials(credential_identity=credential_identity, oauth_only=oauth_only)
         self.credential_identity = self.credentials['credential_identity']
 
     def request(self, method, endpoint, **kwargs):
@@ -337,19 +345,25 @@ def run_generation(project, job_id, *, transport=None):
             if output.is_file() and digest_file(output) == record.get('output_sha256'):
                 return record
         remote = record.get('remote_request_id')
+        subscription = plan['quote'].get('billing_mode') == 'subscription'
         if not remote:
             if record['status'] in STATES_AFTER_SUBMIT:
                 if record['status'] == 'submitting':
                     record['status'] = 'submission_unknown'; atomic(path, record)
                 return record
             approval = record.get('approval') or {}
-            if record['status'] != 'approved' or approval.get('plan_sha256') != plan['plan_sha256']:
+            if subscription:
+                if record['status'] != 'ready_subscription':
+                    raise ValueError('Prepare a subscription-only job before using OAuth quota')
+            elif record['status'] != 'approved' or approval.get('plan_sha256') != plan['plan_sha256']:
                 raise ValueError('Human cost authorization is required before generation')
-            if now() >= min(datetime.fromisoformat(approval['expires_at']),
+            if not subscription and now() >= min(datetime.fromisoformat(approval['expires_at']),
                             datetime.fromisoformat(plan['quote']['valid_until'])):
                 raise ValueError('Authorization or price quotation expired')
             endpoint, body = payload(project, plan)
-            transport = transport or XaiTransport()
+            transport = transport or XaiTransport(oauth_only=subscription)
+            if subscription and (transport.credentials.get('provider')!='xai-oauth' or transport.credentials.get('auth_type')!='oauth'):
+                raise ValueError('Subscription jobs cannot use a paid API key')
             record.update(status='submitting', generation_submitted=True,
                           submitted_at=now().isoformat(),
                           credential_identity=transport.credential_identity)
@@ -377,7 +391,7 @@ def run_generation(project, job_id, *, transport=None):
                               error_type=type(exc).__name__)
             atomic(path, record)
             return record
-        transport = transport or XaiTransport(credential_identity=record.get('credential_identity'))
+        transport = transport or XaiTransport(credential_identity=record.get('credential_identity'), oauth_only=subscription)
         # Pool rotation must never send a paid job to an unrelated account.
         if record.get('credential_identity') != transport.credential_identity:
             raise ValueError('Select the issuing Hermes credential before recovering this job')
