@@ -222,6 +222,7 @@ class GenerationPlan(StrictModel):
     input_references: list[GenerationReference] | None = Field(default=None, max_length=5)
     variant: str = Field(default='main', min_length=1, max_length=100)
     billing_mode: Literal['paid_api', 'subscription'] | None = None
+    first_frame: str | None = Field(default=None, min_length=1, max_length=500)
 
 
 class GenerationApproval(StrictModel):

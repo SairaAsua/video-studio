@@ -239,3 +239,94 @@ def test_subscription_jobs_never_fall_back_to_api_key_or_need_cash_approval(proj
     assert gen.run_generation(project,p['job_id'],transport=t)['status']=='pending'
     assert gen.run_generation(project,p['job_id'],transport=t)['status']=='completed'
     assert [c[0] for c in t.calls]==['POST','GET']
+
+
+def accepted_board():
+    b = board()
+    for kind in ['characters', 'locations']:
+        for item in b['continuity'][kind].values():
+            item['versions'][0].update(status='accepted', image_paths=['ref.png'])
+    return b
+
+
+def composed_still(project, b):
+    p = gen.plan_generation(project, b, target={'type':'shot', 'scene_id':1},
+        prompt='Nora in the same house', media_type='image', model=gen.IMAGE_MODEL,
+        aspect_ratio='1:1')
+    authorized(project, p)
+    t = Transport(project)
+    gen.run_generation(project, p['job_id'], transport=t)
+    r = gen.run_generation(project, p['job_id'], transport=t)
+    b['scenes'][0]['takes'] = [{'path':r['output'], 'generation_job_id':r['job_id'], 'type':'still'}]
+    return r
+
+
+def animate(project, b, frame, **extra):
+    return gen.plan_generation(project, b, target={'type':'shot','scene_id':1},
+        prompt='A quiet reaction, camera locked', media_type='video',
+        model='grok-imagine-video-1.5', aspect_ratio='1:1', first_frame=frame, **extra)
+
+
+def test_pinned_composition_sends_one_first_frame_preserving_all_lineage(project):
+    b = accepted_board(); still = composed_still(project, b)
+    p = animate(project, b, still['output'])
+    assert len(p['input_references']) == 2
+    assert p['first_frame']['generation_job_id'] == still['job_id']
+    assert p['quote']['input_images'] == 1 and p['quote']['continuity_reference_images'] == 2
+    assert p['quote']['estimated_cost_usd'] == '0.43'
+    endpoint, body = gen.payload(project, p)
+    assert endpoint == '/videos/generations' and body['image']['url'].startswith('data:image/png;base64,')
+    assert 'reference_images' not in body and '<IMAGE_' not in body['prompt']
+    assert p == animate(project, b, still['output'])
+
+
+def test_single_accepted_location_can_be_the_exact_first_frame(project):
+    b = accepted_board(); b['scenes'][0]['characters'] = []
+    b['scenes'][0]['reference_versions'].pop('NORA')
+    p = animate(project, b, 'ref.png')
+    assert p['first_frame']['source'] == 'accepted_reference'
+    assert p['first_frame']['sha256'] == gen.digest_file(project/'ref.png')
+    assert 'image' in gen.payload(project, p)[1]
+
+
+def test_first_frame_cannot_bypass_continuity_or_use_another_shots_still(project):
+    b = accepted_board()
+    with pytest.raises(ValueError, match='retained still'):
+        animate(project, b, 'ref.png')
+    still = composed_still(project, b)
+    source = gen.path_for(project, still['job_id'])
+    record = json.loads(source.read_text()); record['plan']['target']['scene_id'] = 2
+    gen.atomic(source, record)
+    with pytest.raises(ValueError, match='same shot'):
+        animate(project, b, still['output'])
+
+
+def test_first_frame_from_old_pins_is_refused(project):
+    b = accepted_board(); still = composed_still(project, b)
+    item = b['continuity']['characters']['NORA']
+    item['versions'].append({**item['versions'][0], 'id':'v002'})
+    b['scenes'][0]['reference_versions']['NORA'] = 'v002'
+    with pytest.raises(ValueError, match='different continuity pins'):
+        animate(project, b, still['output'])
+
+
+def test_changed_first_frame_is_rejected_before_any_external_submit(project):
+    b = accepted_board(); still = composed_still(project, b)
+    p = animate(project, b, still['output']); authorized(project, p)
+    (project/still['output']).write_bytes(b'changed')
+    t = Transport(project)
+    with pytest.raises(ValueError, match='first frame changed'):
+        gen.run_generation(project, p['job_id'], transport=t)
+    assert not t.calls and not gen.status(project, p['job_id'])['generation_submitted']
+
+
+def test_first_frame_enforces_project_boundary_and_original_aspect(project):
+    b = accepted_board(); b['scenes'][0]['characters'] = []
+    with pytest.raises(ValueError):
+        animate(project, b, '../outside.png')
+    with pytest.raises(ValueError, match='aspect ratio'):
+        gen.plan_generation(project, b, target={'type':'shot','scene_id':1},
+            prompt='No camera crop',media_type='video',model='grok-imagine-video-1.5',
+            first_frame='ref.png',aspect_ratio='16:9')
+    with pytest.raises(ValueError, match='only available for shot video'):
+        plan(project, first_frame='ref.png')

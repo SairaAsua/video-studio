@@ -149,6 +149,10 @@ function renderGeneration(p){
  const variant=generationField(input('gen-variant','main'));
  const aspect=generationField(select('gen-aspect',[['16:9','Horizontal · 16:9'],['3:4','Retrato · 3:4'],['1:1','Cuadrado · 1:1'],['9:16','Vertical · 9:16']],'16:9'));
  const refs=el('div');refs.id='gen-inputs';
+ const frame=generationField(select('gen-first-frame',[['','Crear encuadre desde las referencias']],''));
+ const framePreview=el('img');framePreview.id='gen-first-frame-preview';framePreview.style.maxWidth='100%';framePreview.hidden=true;framePreview.alt='Primer fotograma que se animará';
+ function previewFrame(){framePreview.hidden=!frame.value;if(frame.value)framePreview.src=media(frame.value);}
+ frame.onchange=previewFrame;
  function update(){const t=JSON.parse(target.value);const isReference=t.type==='reference';if(isReference){type.value='image';model.value='grok-imagine-image-2.0';}type.disabled=isReference;
   if(type.value==='image'){model.value='grok-imagine-image-2.0';duration.disabled=true;}else{if(model.value==='grok-imagine-image-2.0')model.value='grok-imagine-video';duration.disabled=false;}
   const specification=isReference?state.board.continuity[t.kind][t.key].versions.find(v=>v.id===t.version):shot();
@@ -157,12 +161,16 @@ function renderGeneration(p){
    const checkbox=el('input');checkbox.type='checkbox';checkbox.value=JSON.stringify({kind,key,version:v.id});checkbox.checked=!isReference&&shot().reference_versions?.[key]===v.id;refs.append(field(`${item.name} · ${v.id} · ${v.image_paths.length} imágenes`,checkbox));
   }
   if(!refs.children.length)refs.append(el('p','Todavía no hay referencias visuales elegidas. Empezá por un personaje o lugar y revisá su imagen antes de generar las tomas.','note'));
+  const frames=new Map();for(const take of shot().takes||[])if(take.generation_job_id&&/\.(png|jpe?g|webp)$/i.test(take.path))frames.set(take.path,'Composición de esta toma · '+take.path);
+  const pins=Object.entries(shot().reference_versions||{});if(pins.length===1){const [key,id]=pins[0];const item=state.board.continuity?.characters?.[key]||state.board.continuity?.locations?.[key];const v=item?.versions.find(v=>v.id===id&&v.status==='accepted');for(const path of v?.image_paths||[])frames.set(path,item.name+' · '+id);}
+  frame.replaceChildren(...[['','Crear encuadre desde las referencias'],...frames].map(([value,label])=>{const option=el('option',label);option.value=value;return option;}));frame.disabled=isReference||type.value!=='video';previewFrame();
  }
- target.onchange=update;type.onchange=update;model.onchange=()=>{type.value=model.value==='grok-imagine-image-2.0'?'image':'video';duration.disabled=type.value==='image';};
+ target.onchange=update;type.onchange=update;model.onchange=()=>{type.value=model.value==='grok-imagine-image-2.0'?'image':'video';duration.disabled=type.value==='image';frame.disabled=type.value!=='video';};
  p.append(field('Destino del resultado',target),field('Tipo de material',type),field('Modelo y calidad',model),field('Prompt que se enviará',prompt),field('Duración del clip fuente (s)',duration),field('Variante de esta prueba',variant),field('Formato',aspect),el('h3','Referencias a enviar','section-label'),refs);
+ p.append(field('Primer fotograma del clip',frame),framePreview,el('p','Para conservar el encuadre, elegí una composición de esta misma toma hecha con sus referencias fijadas. Revisala antes de animar. Un lugar sin personajes también puede partir de su referencia elegida.','note'));
  p.append(button('Preparar pedido y ver costo',async()=>{
   if(state.dirty)throw Error('Guardá los cambios del proyecto antes de preparar el pedido.');
-  const result=await api(`${base()}/generations/plan`,{revision:state.revision,target:JSON.parse(target.value),media_type:type.value,model:model.value,prompt:prompt.value,duration:Number(duration.value),variant:variant.value,aspect_ratio:aspect.value,input_references:[...refs.querySelectorAll('input:checked')].map(n=>JSON.parse(n.value))},'POST');
+  const result=await api(`${base()}/generations/plan`,{revision:state.revision,target:JSON.parse(target.value),media_type:type.value,model:model.value,prompt:prompt.value,duration:Number(duration.value),variant:variant.value,aspect_ratio:aspect.value,input_references:[...refs.querySelectorAll('input:checked')].map(n=>JSON.parse(n.value)),first_frame:!frame.disabled&&frame.value?frame.value:null},'POST');
   await refreshGenerationJobs(list);message(result.plan.quote.billing_mode==='subscription'?'Pedido preparado para la cuota OAuth de tu suscripción. Todavía no fue enviado.':`Pedido preparado · USD ${result.plan.quote.estimated_cost_usd}. Todavía no fue enviado.`);
  },'primary'));
  const list=el('div');list.id='generation-jobs';p.append(el('h3','Pedidos guardados','section-label'),button('Actualizar estado local',()=>refreshGenerationJobs(list),'secondary'),list);update();guard(()=>refreshGenerationJobs(list));
@@ -176,6 +184,7 @@ async function refreshGenerationJobs(container){
   const details=el('details');details.append(el('summary','Ver pedido y costo'),el('p',plan.prompt),el('p',`${plan.quote.input_images} referencias · ${plan.quote.outputs} resultado · un intento. ${plan.quote.billing_mode==='subscription'?'Se usa exclusivamente OAuth; no se compra crédito ni se cambia a una clave de pago. La tarifa API es sólo referencia.':'Estimación de tarifa API; impuestos aparte.'}`,'note'));
   const pricing=el('a','Tarifa y fecha de consulta');pricing.href=plan.quote.pricing_url;pricing.target='_blank';pricing.rel='noopener';details.append(pricing,el('small',plan.quote.pricing_checked));
   for(const r of plan.input_references){const img=el('img');img.src=media(r.path);img.alt=r.name+' '+r.version;img.style.maxWidth='110px';details.append(img);}
+  if(plan.first_frame){details.append(el('p',`Se envía sólo el primer fotograma; las ${plan.quote.continuity_reference_images} imágenes de continuidad quedan registradas como procedencia.`,'note'));const img=el('img');img.src=media(plan.first_frame.path);img.alt='Primer fotograma fijado';img.style.maxWidth='100%';details.append(img);}
   card.append(details);if(job.error)card.append(el('p',job.error,'note'));
   if(job.status==='awaiting_approval')card.append(button(`Autorizar USD ${plan.quote.estimated_cost_usd} y generar`,async()=>{
    if(!window.confirm(`Se enviará este prompt y sus ${plan.quote.input_images} imágenes a xAI para producir un resultado. Costo estimado: USD ${plan.quote.estimated_cost_usd}, impuestos aparte. ¿Autorizás este único intento?`))return;

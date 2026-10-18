@@ -70,8 +70,42 @@ def version_of(board, kind, key, version):
     return item, selected
 
 
+def first_frame_source(project, scene, inputs, relative, aspect_ratio):
+    """Bind the composed frame to this shot's actual continuity, never just a filename."""
+    path = media_file(project, relative)
+    if path.stat().st_size > 20 * 1024 * 1024:
+        raise ValueError('First frame exceeds 20 MB')
+    try:
+        image = fitz.Pixmap(str(path))
+        width, height = image.width, image.height
+    except Exception:
+        raise ValueError('First frame must be a valid raster image') from None
+    aw, ah = map(int, aspect_ratio.split(':'))
+    if height < 1 or abs(width / height - aw / ah) > .03:
+        raise ValueError('First frame must match the requested aspect ratio to preserve framing')
+    result = {'path': relative, 'sha256': digest_file(path), 'width': width, 'height': height}
+    # A single accepted subject/location may itself be the complete first frame.
+    if len({r['key'] for r in inputs}) == 1 and any(r['path'] == relative for r in inputs):
+        return {**result, 'source': 'accepted_reference'}
+    take = next((t for t in scene.get('takes', []) if t['path'] == relative and t.get('generation_job_id')), None)
+    if not take:
+        raise ValueError('Choose an accepted single reference or a retained still composed for this shot')
+    source = status(project, take['generation_job_id'])
+    plan = source['plan']
+    if (source['status'] != 'completed' or source.get('output') != relative
+            or source.get('output_sha256') != result['sha256'] or plan['media_type'] != 'image'
+            or plan['target'] != {'type': 'shot', 'scene_id': scene['id']}):
+        raise ValueError('First frame must be a verified generated still for this same shot')
+    identity = lambda refs: sorted((r['kind'], r['key'], r['version'], r['path'], r['sha256']) for r in refs)
+    if identity(plan['input_references']) != identity(inputs):
+        raise ValueError('First frame was composed with different continuity pins; compose a new still')
+    return {**result, 'source': 'composed_shot', 'generation_job_id': source['job_id'],
+            'source_plan_sha256': plan['plan_sha256']}
+
+
 def plan_generation(project, board, *, target, prompt, media_type, model,
-                    duration=3, aspect_ratio='16:9', input_references=None, variant='main', billing_mode='paid_api'):
+                    duration=3, aspect_ratio='16:9', input_references=None, variant='main',
+                    billing_mode='paid_api', first_frame=None):
     if billing_mode not in {'paid_api', 'subscription'}:
         raise ValueError('Choose API billing or OAuth subscription quota')
     if not prompt.strip() or len(prompt) > 40000 or len(variant) > 100:
@@ -99,6 +133,8 @@ def plan_generation(project, board, *, target, prompt, media_type, model,
             raise ValueError('Shot inputs must use its pinned reference versions')
     else:
         raise ValueError('Choose a shot or continuity reference target')
+    if first_frame is not None and (media_type != 'video' or target['type'] != 'shot'):
+        raise ValueError('A pinned first frame is only available for shot video generation')
     inputs = []
     references = input_references or []
     if required - {r['key'] for r in references}:
@@ -135,9 +171,11 @@ def plan_generation(project, board, *, target, prompt, media_type, model,
             raise ValueError('Video duration exceeds the selected model range')
         output_cost, input_rate = Decimal(output_rate) * duration, Decimal(reference_rate)
         params = {'resolution': '720p', 'duration': duration}
-    cost = output_cost + input_rate * len(inputs)
+    frame = first_frame_source(project, specification, inputs, first_frame, aspect_ratio) if first_frame else None
+    transmitted_count = 1 if frame else len(inputs)
+    cost = output_cost + input_rate * transmitted_count
     quote = {'currency': 'USD', 'estimated_cost_usd': str(cost), 'outputs': 1,
-             'input_images': len(inputs), 'output_cost_usd': str(output_cost),
+             'input_images': transmitted_count, 'output_cost_usd': str(output_cost),
              'input_image_rate_usd': str(input_rate), 'pricing_url': PRICING_URL,
              'pricing_checked': PRICING_CHECKED, 'valid_until': PRICING_VALID_UNTIL,
              'basis': 'published API list price; OAuth credit/entitlement not verified; taxes excluded',
@@ -155,13 +193,19 @@ def plan_generation(project, board, *, target, prompt, media_type, model,
         (f'<IMAGE_{i}>' if media_type == 'video' else f'Input image {i+1}') +
         f": {r['name']} ({r['key']}, {r['version']}). Preserve this identity and its listed outfit/architecture."
         for i, r in enumerate(inputs))
-    effective_prompt = prompt.strip() + ('\nAccepted reference roles:\n'+reference_legend if inputs else '')
+    if frame:
+        effective_prompt = prompt.strip() + '\nAnimate the supplied first frame. Preserve its framing, identities, outfits and architecture. The continuity references are already composed into that frame; they are not additional input images.'
+    else:
+        effective_prompt = prompt.strip() + ('\nAccepted reference roles:\n'+reference_legend if inputs else '')
     plan = {'schema': 'video-studio.generation/v1', 'target': target,
             'target_specification': specification, 'media_type': media_type,
             'model': model, 'prompt': effective_prompt, 'aspect_ratio': aspect_ratio,
             'parameters': params, 'input_references': inputs, 'variant': variant,
             'quote': quote, 'source_revision': board.get('source_revision'),
             'review_status': 'candidate_requires_visual_review'}
+    if frame:
+        plan['first_frame'] = frame
+        quote['continuity_reference_images'] = len(inputs)
     plan['plan_sha256'] = fingerprint(plan)
     return {**plan, 'job_id': plan['plan_sha256'][:24]}
 
@@ -280,7 +324,14 @@ def payload(project, plan):
             body['images'] = refs
         endpoint = '/images/edits' if refs else '/images/generations'
     else:
-        if refs:
+        frame = plan.get('first_frame')
+        if frame:
+            path = media_file(project, frame['path'])
+            if digest_file(path) != frame['sha256']:
+                raise ValueError('The pinned first frame changed; prepare a new quote')
+            pix = fitz.Pixmap(str(path))
+            body['image'] = {'url': 'data:image/png;base64,' + base64.b64encode(pix.tobytes('png')).decode()}
+        elif refs:
             body['reference_images'] = [{'url': r['url']} for r in refs]
         endpoint = '/videos/generations'
     # No catbox upload, permanent public storage or serialized bearer/data URI.

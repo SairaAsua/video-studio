@@ -125,6 +125,19 @@ cost authorization, remote ID and output hash remain in ignored project state.
 Registering the candidate appends a draft reference version or a retained take;
 it never selects the result or changes another edit. Inspect before accepting.
 
+Pinned first frames
+A shot video plan can specify first_frame as a project-relative raster path.
+Choose a retained generated still composed for that same shot with exactly the
+current reference versions and image hashes. For a shot with a single accepted
+subject/location, its reference image may itself be the first frame. Arbitrary
+files, another shot's composition and stale continuity are refused. Aspect ratio
+must match the frame so the provider need not crop geographic anchors.
+The plan hashes the frame, its source generation and the continuity lineage.
+It sends that one image via xAI's image-to-video input, rather than sending the
+lineage images as additional references. The quote counts the actual transmitted
+image. Submission verifies both frame and lineage hashes; no media change can
+reuse the old authorization. Output remains a candidate pending playback review.
+
 Soundtrack headroom
 Each input clock is normalized to its decoded-audio zero before source trims,
 including Opus pre-skip. Assembly uses floating-point PCM to preserve source
