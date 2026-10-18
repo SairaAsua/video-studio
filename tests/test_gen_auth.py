@@ -1,5 +1,5 @@
 """Credential rotation must not resurrect the stale singleton auth file."""
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 import sys
 
 import pytest
@@ -12,6 +12,12 @@ def install_resolver(monkeypatch, resolve):
     module.resolve_xai_http_credentials = resolve
     module.hermes_xai_user_agent = lambda: "Hermes-Agent/test"
     monkeypatch.setitem(sys.modules, "tools.xai_http", module)
+    pool_module = ModuleType('agent.credential_pool')
+    pool_module.load_pool = lambda _: SimpleNamespace(entries=lambda: [])
+    monkeypatch.setitem(sys.modules, 'agent.credential_pool', pool_module)
+    constants = ModuleType('hermes_constants')
+    constants.get_hermes_home = lambda: bridge.Path('/test/hermes')
+    monkeypatch.setitem(sys.modules, 'hermes_constants', constants)
     monkeypatch.delenv("XAI_API_KEY", raising=False)
 
 
@@ -46,3 +52,18 @@ def test_ambiguous_paid_submission_is_never_retried(monkeypatch):
     with pytest.raises(bridge.requests.Timeout):
         bridge._api_request("POST", "/videos/generations", json={})
     assert len(calls) == 1
+
+
+def test_async_job_uses_same_pool_entry_after_rotation_and_refresh(monkeypatch):
+    install_resolver(monkeypatch, lambda: {'api_key': 'other-account', 'base_url': bridge.BASE})
+    first=SimpleNamespace(id='issuing-entry',runtime_api_key='first-access',runtime_base_url=bridge.BASE)
+    other=SimpleNamespace(id='other-entry',runtime_api_key='other-account',runtime_base_url=bridge.BASE)
+    sys.modules['agent.credential_pool'].load_pool=lambda _: SimpleNamespace(entries=lambda:[first,other])
+    import hashlib
+    identity=hashlib.sha256(b'/test/hermes:issuing-entry').hexdigest()
+    assert bridge._credentials(credential_identity=identity)['api_key']=='first-access'
+    first.runtime_api_key='refreshed-access'
+    c=bridge._credentials(credential_identity=identity)
+    assert c['api_key']=='refreshed-access' and c['credential_identity']==identity
+    with pytest.raises(RuntimeError,match='issuing'):
+        bridge._credentials(credential_identity='unavailable-entry')

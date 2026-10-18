@@ -6,12 +6,18 @@
 
 Video Studio is a web dashboard + ffmpeg backend for AI-assisted video production. It produces narrated explainer videos from scripts and AI-generated b-roll. The dashboard is the primary collaboration tool between the human and the agent.
 
+The `workbench` branch also supports music-led narrative films in the same
+runtime and storyboard. Read `reference/workbench-contract.txt` for scene editing,
+versioned continuity, separate film exports and recoverable paid generation.
+Use `/studio?project=SLUG` for this workflow. Preserve the user's explicit host,
+project and authorization choices; a prepared local request is not Matrix delivery.
+
 ## Entry protocol
 
 When entering this project, do these in order:
 
-1. **Read `MEMORY.md`** — operational state, active features, known bugs, server command
-2. **Load skill `video-studio-e2e`** (`skill_view(name='video-studio-e2e')`) — canonical 11-step PDF→video workflow, placa design evolution, character sheets, prompt engineering guide
+1. **Read `MEMORY.md` if supplied locally** — operational state, active features, known bugs. Missing local memory is not proof that a project lacks a script.
+2. **Read the relevant skill** — `skills/video-workbench/SKILL.md` for this branch's workbench; `video-studio-e2e` where installed and applicable to narrated PDF explainers.
 3. **Check Kanban board** `video-studio` — active/blocked/triage cards
 4. **Check wiki** `~/wiki/projects/video-studio/` — research notes, design docs
 5. **Verify server** is running on `:8900`:
@@ -23,13 +29,16 @@ When entering this project, do these in order:
 ## Server command
 
 ```bash
-HERMES_HOME=/home/nicolas/.hermes /home/nicolas/Projects/video-studio/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8900
+./start.sh
 ```
 
 ## Critical rules
 
 ### Never do a full project render without asking
-Scene partials and individual renders are fine. But `concat_scenes()` + `painterly_filter()` for the full project must be confirmed with Nicolás first.
+Scene partials and individual renders are fine. Full-film rendering needs the
+project owner's authorization; reuse scope already explicitly granted in the
+session. Keep independently planned films separate. Paid generation requires
+concrete cost authorization even when a full film was requested.
 
 ### Server must restart after ANY code change
 FastAPI StaticFiles caches `index.html` at startup. After any change to `app/static/index.html`, restart the server.
@@ -45,7 +54,7 @@ Check actual state with tools (DOM inspection, ffprobe, API calls), not visual s
 
 ## Architecture constraints
 
-- **Audio-first**: scene duration = narration audio duration. Timeline shorter? Black padding. Longer? Truncated by `-shortest`.
+- **Audio-first**: narration projects follow narration duration. Music workbench projects preserve the edited music clock and explicit source trims; align the picture instead of padding or stretching music.
 - **No video loops**: pre-extend with `video_extend()` (ping-pong). The filter chain has no loop filter.
 - **No zoom_in**: zoom_out only on stills, auto-calcs speed to land at native 1.0.
 - **Placas max 3-4 per scene**: ffmpeg filter_complex times out >120s with 6+ overlays.

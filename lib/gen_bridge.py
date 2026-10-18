@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """Direct xAI image/video generation — per official docs at docs.x.ai."""
-import argparse, json, os, sys, time, requests
+import argparse, hashlib, json, os, sys, time, requests
 from pathlib import Path
 
 BASE = "https://api.x.ai/v1"
 
-def _credentials():
+def _credentials(credential_identity=None):
     """Keep OAuth selection/refresh in Hermes, without copying its auth store."""
     explicit_key = os.environ.get("XAI_API_KEY", "").strip()
     if explicit_key:
+        identity = 'explicit-' + hashlib.sha256(explicit_key.encode()).hexdigest()
+        if credential_identity and credential_identity != identity:
+            raise RuntimeError('The generation belongs to a different xAI credential')
         return {"api_key": explicit_key,
                 "base_url": os.environ.get("XAI_BASE_URL", BASE).rstrip("/"),
-                "user_agent": "Video-Studio"}
+                "user_agent": "Video-Studio", "credential_identity": identity}
     agent_root = Path(os.environ.get("HERMES_AGENT_ROOT", Path.home() / ".hermes/hermes-agent"))
     if str(agent_root) not in sys.path:
         sys.path.insert(0, str(agent_root))
@@ -20,6 +23,23 @@ def _credentials():
     except ImportError:
         raise RuntimeError("Hermes credential resolver unavailable; configure HERMES_AGENT_ROOT or XAI_API_KEY") from None
     credentials = resolve_xai_http_credentials()
+    # Public pool metadata lets an asynchronous job retain its issuing account
+    # even after a refresh changes the access token or selection rotates.
+    from agent.credential_pool import load_pool
+    from hermes_constants import get_hermes_home
+    pool = load_pool('xai-oauth')
+    for entry in pool.entries():
+        identity = hashlib.sha256((str(get_hermes_home().resolve())+':'+entry.id).encode()).hexdigest()
+        matches = identity == credential_identity if credential_identity else entry.runtime_api_key == credentials.get('api_key')
+        if matches:
+            credentials = {**credentials, 'api_key': entry.runtime_api_key,
+                           'base_url': entry.runtime_base_url or BASE,
+                           'credential_identity': identity}
+            break
+    if not credentials.get('credential_identity'):
+        credentials['credential_identity'] = 'explicit-' + hashlib.sha256(credentials.get('api_key', '').encode()).hexdigest()
+    if credential_identity and credentials.get('credential_identity') != credential_identity:
+        raise RuntimeError('The issuing Hermes credential is not available in this profile')
     if not credentials.get("api_key"):
         raise RuntimeError("No xAI credential available in the selected Hermes profile")
     return {**credentials, "user_agent": hermes_xai_user_agent()}

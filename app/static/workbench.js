@@ -53,7 +53,7 @@ function render(){
  const pos=shots().findIndex(x=>x.id===s.id);$('move-up').disabled=pos<=0;$('move-down').disabled=pos===shots().length-1;renderPanel();
 }
 function chooseShot(id){if(!allowNavigation())return;state.selected=id;state.dirty=false;$('save-state').textContent='Guardado';render();}
-function renderPanel(){for(const n of document.querySelectorAll('[data-tab]')){const active=n.dataset.tab===state.tab;n.classList.toggle('active',active);n.setAttribute('aria-selected',String(active));}const p=$('panel');p.replaceChildren();if(state.tab==='shot')renderShot(p);else if(state.tab==='music')renderMusic(p);else if(state.tab==='export')renderExport(p);else renderReferences(p,state.tab);}
+function renderPanel(){for(const n of document.querySelectorAll('[data-tab]')){const active=n.dataset.tab===state.tab;n.classList.toggle('active',active);n.setAttribute('aria-selected',String(active));}const p=$('panel');p.replaceChildren();if(state.tab==='shot')renderShot(p);else if(state.tab==='music')renderMusic(p);else if(state.tab==='export')renderExport(p);else if(state.tab==='generate')renderGeneration(p);else renderReferences(p,state.tab);}
 function renderShot(p){
  const s=shot();const include=input('included',null,'checkbox');include.checked=s.included!==false;p.append(field('Usar esta toma en el montaje',include),field('Acción / relato',area('action',s.text)),field('Encuadre',input('framing',s.framing)));
  const row=el('div',undefined,'row');row.append(field('Duración de uso (s)',input('duration',s.edit_duration_secs,'number')),field('Entrada en clip fuente (s)',input('source-in',s.source_trim_in||0,'number')));p.append(row,el('p','Los tiempos quedan abiertos hasta elegir el corte. Detalles 0,5–1,5 s; acciones 1,5–3 s.','note'));
@@ -134,3 +134,59 @@ $('move-up').onclick=()=>guard(()=>move(-1));$('move-down').onclick=()=>guard(()
 $('project').onchange=()=>guard(async()=>{if(!allowNavigation()){$('project').value=state.slug;return;}await load($('project').value,false);});
 window.addEventListener('beforeunload',e=>{if(state.dirty){e.preventDefault();e.returnValue='';}});
 guard(async()=>{const projects=await api('/api/projects');$('project').replaceChildren(...projects.map(name=>{const n=el('option',name);n.value=name;return n;}));const params=new URLSearchParams(location.search);state.film=params.get('film')==='B'?'B':'A';const target=params.get('project')||projects[0];if(target)await load(target,false);else message('Creá un proyecto desde el editor de capas.');});
+
+function generationField(node){node.removeEventListener('input',dirty);node.removeEventListener('change',dirty);return node;}
+function renderGeneration(p){
+ p.append(el('h3','Preparar una generación','section-label'),el('p','Revisá el pedido, las referencias y su costo. Preparar conserva el plan sin enviarlo; cada generación necesita autorización humana.','note'));
+ const targets=[[JSON.stringify({type:'shot',scene_id:shot().id}),`Toma ${shot().shot_id||shot().id}`]];
+ for(const kind of ['characters','locations'])for(const [key,item] of Object.entries(state.board.continuity?.[kind]||{})){
+  const version=item.versions.at(-1);targets.push([JSON.stringify({type:'reference',kind,key,version:version.id}),item.name+' · nueva imagen desde '+version.id]);
+ }
+ const target=generationField(select('gen-target',targets,targets[1]?.[0]||targets[0][0]));
+ const type=generationField(select('gen-type',[['image','Imagen / referencia'],['video','Clip de video']],'image'));
+ const model=generationField(select('gen-model',[['grok-imagine-image-2.0','Imagine Image 2.0 · 1K, calidad low'],['grok-imagine-video','Imagine Video · 720p'],['grok-imagine-video-1.5','Imagine Video 1.5 · 720p']],'grok-imagine-image-2.0'));
+ const prompt=generationField(area('gen-prompt','',true));const duration=generationField(input('gen-duration',3,'number'));duration.step='1';duration.min='1';duration.max='15';
+ const variant=generationField(input('gen-variant','main'));
+ const aspect=generationField(select('gen-aspect',[['16:9','Horizontal · 16:9'],['3:4','Retrato · 3:4'],['1:1','Cuadrado · 1:1'],['9:16','Vertical · 9:16']],'16:9'));
+ const refs=el('div');refs.id='gen-inputs';
+ function update(){const t=JSON.parse(target.value);const isReference=t.type==='reference';if(isReference){type.value='image';model.value='grok-imagine-image-2.0';}type.disabled=isReference;
+  if(type.value==='image'){model.value='grok-imagine-image-2.0';duration.disabled=true;}else{if(model.value==='grok-imagine-image-2.0')model.value='grok-imagine-video';duration.disabled=false;}
+  const specification=isReference?state.board.continuity[t.kind][t.key].versions.find(v=>v.id===t.version):shot();
+  prompt.value=isReference?specification.en||specification.appearance||specification.es||'':type.value==='video'?[specification.visual_direction,specification.video_prompt_en,'No dialogue. No music.'].filter(Boolean).join('\n'):specification.visual_direction||'';
+  refs.replaceChildren();for(const kind of ['characters','locations'])for(const [key,item] of Object.entries(state.board.continuity?.[kind]||{}))for(const v of item.versions){if(v.status!=='accepted'||!v.image_paths?.length)continue;
+   const checkbox=el('input');checkbox.type='checkbox';checkbox.value=JSON.stringify({kind,key,version:v.id});checkbox.checked=!isReference&&shot().reference_versions?.[key]===v.id;refs.append(field(`${item.name} · ${v.id} · ${v.image_paths.length} imágenes`,checkbox));
+  }
+  if(!refs.children.length)refs.append(el('p','Todavía no hay referencias visuales elegidas. Empezá por un personaje o lugar y revisá su imagen antes de generar las tomas.','note'));
+ }
+ target.onchange=update;type.onchange=update;model.onchange=()=>{type.value=model.value==='grok-imagine-image-2.0'?'image':'video';duration.disabled=type.value==='image';};
+ p.append(field('Destino del resultado',target),field('Tipo de material',type),field('Modelo y calidad',model),field('Prompt que se enviará',prompt),field('Duración del clip fuente (s)',duration),field('Variante de esta prueba',variant),field('Formato',aspect),el('h3','Referencias a enviar','section-label'),refs);
+ p.append(button('Preparar pedido y ver costo',async()=>{
+  if(state.dirty)throw Error('Guardá los cambios del proyecto antes de preparar el pedido.');
+  const result=await api(`${base()}/generations/plan`,{revision:state.revision,target:JSON.parse(target.value),media_type:type.value,model:model.value,prompt:prompt.value,duration:Number(duration.value),variant:variant.value,aspect_ratio:aspect.value,input_references:[...refs.querySelectorAll('input:checked')].map(n=>JSON.parse(n.value))},'POST');
+  await refreshGenerationJobs(list);message(`Pedido preparado · USD ${result.plan.quote.estimated_cost_usd}. Todavía no fue enviado.`);
+ },'primary'));
+ const list=el('div');list.id='generation-jobs';p.append(el('h3','Pedidos guardados','section-label'),button('Actualizar estado local',()=>refreshGenerationJobs(list),'secondary'),list);update();guard(()=>refreshGenerationJobs(list));
+}
+async function refreshGenerationJobs(container){
+ const slug=state.slug;const records=await api(`${base()}/generations`);if(!container.isConnected||state.slug!==slug)return;container.replaceChildren();
+ const names={withdrawn:'Retirado antes del envío',awaiting_approval:'Falta autorización',approved:'Autorizado, pendiente de envío',submitting:'Enviando',submission_unknown:'Envío incierto · revisar antes de continuar',pending:'Pedido guardado · consultar al proveedor',completed:'Candidato descargado',provider_failed:'El proveedor informó un fallo',download_failed:'Descarga pendiente de recuperar',rejected:'Pedido rechazado por el proveedor'};
+ for(const job of records.reverse()){
+  const card=el('div',undefined,'version-card');card.dataset.generationJob=job.job_id;const plan=job.plan;
+  card.append(el('strong',names[job.status]||job.status),el('p',`${plan.model} · ${plan.parameters.duration?plan.parameters.duration+' s · ':''}USD ${plan.quote.estimated_cost_usd}`),el('small',job.job_id));
+  const details=el('details');details.append(el('summary','Ver pedido y costo'),el('p',plan.prompt),el('p',`${plan.quote.input_images} referencias · ${plan.quote.outputs} resultado · un intento. Estimación de tarifa API; crédito OAuth no comprobado; impuestos aparte.`,'note'));
+  const pricing=el('a','Tarifa y fecha de consulta');pricing.href=plan.quote.pricing_url;pricing.target='_blank';pricing.rel='noopener';details.append(pricing,el('small',plan.quote.pricing_checked));
+  for(const r of plan.input_references){const img=el('img');img.src=media(r.path);img.alt=r.name+' '+r.version;img.style.maxWidth='110px';details.append(img);}
+  card.append(details);if(job.error)card.append(el('p',job.error,'note'));
+  if(job.status==='awaiting_approval')card.append(button(`Autorizar USD ${plan.quote.estimated_cost_usd} y generar`,async()=>{
+   if(!window.confirm(`Se enviará este prompt y sus ${plan.quote.input_images} imágenes a xAI para producir un resultado. Costo estimado: USD ${plan.quote.estimated_cost_usd}, impuestos aparte. ¿Autorizás este único intento?`))return;
+   await api(`${base()}/generations/${job.job_id}/approve`,{plan_sha256:plan.plan_sha256,max_cost_usd:plan.quote.estimated_cost_usd,statement:`Autorización humana desde la mesa para ${job.job_id}: un intento por USD ${plan.quote.estimated_cost_usd}, con el prompt y referencias mostrados.`},'POST');
+   await api(`${base()}/generations/${job.job_id}/run`,{},'POST');await refreshGenerationJobs(container);message('Envío solicitado. Actualizá el estado local; para recuperar se consulta el mismo pedido.');
+  },'primary'));
+  else if(job.status==='approved'||job.remote_request_id)card.append(button(job.status==='approved'?'Enviar pedido autorizado':'Consultar / recuperar este pedido',async()=>{await api(`${base()}/generations/${job.job_id}/run`,{},'POST');await refreshGenerationJobs(container);message('Consulta iniciada. Actualizá el estado local en unos segundos.');},'secondary'));
+  if(job.status==='submission_unknown')card.append(el('p','No se vuelve a enviar automáticamente. Revisá el pedido en la cuenta del proveedor para evitar un cobro duplicado.','note'));
+  if(job.status==='completed'&&job.output){const m=el(plan.media_type==='video'?'video':'img');m.src=media(job.output);m.style.maxWidth='100%';if(plan.media_type==='video'){m.controls=true;m.muted=true;}else m.alt='Candidato generado pendiente de revisión';card.append(m,button('Agregar candidato a la mesa',async()=>{if(state.dirty)throw Error('Guardá los cambios antes de agregar el candidato.');await api(`${base()}/generations/${job.job_id}/register`,{revision:state.revision},'POST');await load(state.slug);message('Candidato agregado. Revisalo y elegí su versión o toma; las selecciones anteriores se conservan.');},'primary'));}
+  if(['awaiting_approval','approved'].includes(job.status))card.append(button('Retirar pedido sin enviar',async()=>{await api(`${base()}/generations/${job.job_id}/withdraw`,{},'POST');await refreshGenerationJobs(container);},'small-action'));
+  container.append(card);
+ }
+ if(!records.length)container.append(el('p','No hay pedidos preparados todavía.','note'));
+}

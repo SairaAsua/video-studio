@@ -47,7 +47,7 @@ The selected source_in and edit duration determine the silent picture fragment;
 the soundtrack is assembled separately from measured audio edits. Synthetic
 render tests check actual output duration, selected source frames and unchanged
 source audio. Per-film output/muxing is available through Salida below.
-Image/video generation job management remains work in progress; do not use the
+Image/video generation jobs are described below; do not use the
 legacy whole-project export to concatenate A and B into one completed film.
 
 Verification
@@ -77,3 +77,43 @@ The script is offline-only and never downloads a model or calls external STT.
 Analysis checkpoints stay inside the ignored project audio-analysis/ directory.
 Sung-word timestamps are machine estimates pending listening; they do not become
 accepted edit decisions or proof that a human listened to the cuts.
+
+Generation jobs
+The Generar tab prepares a content-addressed quote without contacting xAI.
+POST /studio/generations/plan takes a project revision, target (shot or reference
+version), prompt, model, media_type, duration, aspect_ratio and variant. Input
+references name exact accepted versions; local image hashes are pinned in the
+quote. Shot generation requires every character/location pin. Project-specific
+reference_dependencies can require a younger person or original house/plot when
+preparing their derived reference. New references never become accepted by a
+generation or alter existing shot pins automatically.
+
+GET /studio/generations lists persisted local state. Each job has endpoints
+/approve, /run, /withdraw and /register, plus GET /studio/generations/JOB_ID.
+These paths are under /api/project/SLUG. Approval must name the displayed plan
+hash, a cost ceiling covering its estimate and the actual human authorization.
+An agent must obtain that authorization from the human before recording it;
+the presence of the approval API, OAuth or a prepared receipt is not consent.
+The browser shows prompt, input images, model, output count, price basis and
+parameters before its explicit cost confirmation. Withdrawal clears unused
+approval. Quotes expire; update/verify the documented pricing before later work.
+Estimates use published USD API list prices, exclude taxes and do not prove
+OAuth entitlement/credit or actual billing.
+
+Each run performs at most one submission or one status/download recovery.
+The external-submit intention is saved before its POST; the remote request ID
+is saved immediately on receipt. A timeout before a confirmed ID becomes
+submission_unknown and cannot automatically resubmit. A poll timeout remains
+pending. Recover the saved remote job, including missing local output, rather
+than buying it again. Failed/rejected generations are retained; a deliberately
+new variant needs a new quote and human authorization. Actual file locks prove
+only current local processing; a saved pending record is not a live-process proof.
+
+The selected Hermes pool entry remains bound to its job across token refresh
+and account selection changes. No tokens, raw provider errors or signed media
+URLs are written to job state. References are sent inline to xAI; no public
+third-party upload or permanent public storage is requested. Downloaded images
+are decoded and videos probed before completion. Prompt, reference hashes,
+cost authorization, remote ID and output hash remain in ignored project state.
+Registering the candidate appends a draft reference version or a retained take;
+it never selects the result or changes another edit. Inspect before accepting.

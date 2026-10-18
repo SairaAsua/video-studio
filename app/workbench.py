@@ -197,8 +197,41 @@ class FilmExport(StrictModel):
     preset: Literal["ultrafast", "veryfast", "medium", "slow"] = "veryfast"
 
 
+class GenerationReference(StrictModel):
+    kind: Literal['characters', 'locations']
+    key: str
+    version: str
+
+
+class GenerationTarget(StrictModel):
+    type: Literal['reference', 'shot']
+    kind: Literal['characters', 'locations'] | None = None
+    key: str | None = None
+    version: str | None = None
+    scene_id: int | None = None
+
+
+class GenerationPlan(StrictModel):
+    revision: str
+    target: GenerationTarget
+    media_type: Literal['image', 'video']
+    model: Literal['grok-imagine-image-2.0', 'grok-imagine-video', 'grok-imagine-video-1.5']
+    prompt: str = Field(min_length=1, max_length=40000)
+    duration: int = Field(default=3, ge=1, le=15)
+    aspect_ratio: Literal['16:9', '1:1', '3:4', '9:16'] = '16:9'
+    input_references: list[GenerationReference] | None = Field(default=None, max_length=5)
+    variant: str = Field(default='main', min_length=1, max_length=100)
+
+
+class GenerationApproval(StrictModel):
+    plan_sha256: str
+    max_cost_usd: str = Field(max_length=30)
+    statement: str = Field(min_length=10, max_length=2000)
+
+
 def install_workbench(app, project_dir, notify):
     export_tasks = {}
+    generation_tasks = {}
     def load(slug):
         project = project_dir(slug)
         path = project / "storyboard.json"
@@ -489,3 +522,126 @@ def install_workbench(app, project_dir, notify):
         if record["status"] != "completed":
             begin_export(project, job_id)
         return {"job_id": job_id, "status": record["status"]}
+
+    @app.post('/api/project/{slug}/studio/generations/plan')
+    async def prepare_generation(slug: str, body: GenerationPlan):
+        from lib.generation import plan_generation, prepare_generation
+        with LOCK:
+            project, path, board = load(slug)
+            check(path, body.revision)
+            board = copy.deepcopy(board)
+        params = body.model_dump(exclude={'revision'})
+        params['target'] = body.target.model_dump(exclude_none=True)
+        try:
+            plan = await asyncio.to_thread(plan_generation, project, board, **params)
+            return await asyncio.to_thread(prepare_generation, project, plan)
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.get('/api/project/{slug}/studio/generations')
+    async def generation_list(slug: str):
+        from lib.generation import status
+        project, _, _ = load(slug)
+        records = [status(project, p.stem) for p in sorted((project / '.generation-jobs').glob('*.json'))]
+        return records
+
+    @app.get('/api/project/{slug}/studio/generations/{job_id}')
+    async def generation_status(slug: str, job_id: str):
+        from lib.generation import status
+        project, _, _ = load(slug)
+        try:
+            return await asyncio.to_thread(status, project, job_id)
+        except ValueError:
+            raise HTTPException(404, 'Generation not found')
+
+    @app.post('/api/project/{slug}/studio/generations/{job_id}/approve')
+    async def approve_generation(slug: str, job_id: str, body: GenerationApproval):
+        from lib.generation import approve
+        from decimal import InvalidOperation
+        project, _, _ = load(slug)
+        try:
+            return await asyncio.to_thread(approve, project, job_id, **body.model_dump())
+        except (ValueError, InvalidOperation) as exc:
+            raise HTTPException(400, str(exc))
+        except FileNotFoundError:
+            raise HTTPException(404, 'Generation not found')
+
+    @app.post('/api/project/{slug}/studio/generations/{job_id}/run')
+    async def run_generation(slug: str, job_id: str):
+        from lib.generation import status, run_generation, path_for
+        project, _, _ = load(slug)
+        try:
+            record = status(project, job_id)
+        except ValueError:
+            raise HTTPException(404, 'Generation not found')
+        if record['status'] == 'awaiting_approval':
+            raise HTTPException(403, 'Human authorization for the displayed cost is required')
+        key = (str(project), job_id)
+        if key not in generation_tasks or generation_tasks[key].done():
+            async def perform():
+                try:
+                    await asyncio.to_thread(run_generation, project, job_id)
+                except Exception as exc:
+                    # Do not persist credential-bearing exception strings.
+                    def save_error():
+                        from lib.generation import lock_job
+                        path = path_for(project, job_id)
+                        with lock_job(path):
+                            saved = json.loads(path.read_text())
+                            saved.update(error='Cannot continue this job; check authorization, reference files and the issuing Hermes profile.',
+                                         error_type=type(exc).__name__)
+                            atomic_json(path, saved)
+                    await asyncio.to_thread(save_error)
+                finally:
+                    generation_tasks.pop(key, None)
+            generation_tasks[key] = asyncio.create_task(perform())
+        return {'job_id': job_id, 'status': record['status'], 'local_action_started': True}
+
+    @app.post('/api/project/{slug}/studio/generations/{job_id}/withdraw')
+    async def withdraw_generation(slug: str, job_id: str):
+        from lib.generation import withdraw
+        project, _, _ = load(slug)
+        try:
+            return await asyncio.to_thread(withdraw, project, job_id)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        except FileNotFoundError:
+            raise HTTPException(404, 'Generation not found')
+
+    @app.post('/api/project/{slug}/studio/generations/{job_id}/register')
+    async def register_generation(slug: str, job_id: str, body: RevisionEdit):
+        from lib.generation import status
+        with LOCK:
+            project, path, board = load(slug)
+            check(path, body.revision)
+            try:
+                record = status(project, job_id)
+            except ValueError:
+                raise HTTPException(404, 'Generation not found')
+            if record['status'] != 'completed':
+                raise HTTPException(400, 'A verified downloaded candidate is required')
+            output = local_file(project, record['output'])
+            if revision(output) != record['output_sha256']:
+                raise HTTPException(409, 'Generated candidate changed; recover its original first')
+            target = record['plan']['target']
+            if target['type'] == 'reference':
+                item = board['continuity'][target['kind']].get(target['key'])
+                if not item:
+                    raise HTTPException(409, 'Reference target was removed')
+                if not any(v.get('generation_job_id') == job_id for v in item['versions']):
+                    entry = copy.deepcopy(record['plan']['target_specification'])
+                    entry.update(id=f"v{len(item['versions'])+1:03d}", status='draft',
+                                 image_paths=[record['output']], generation_job_id=job_id,
+                                 en=record['plan']['prompt'],
+                                 notes='Generated candidate; inspect before accepting. Prompt and input hashes are retained in the generation job.')
+                    item['versions'].append(entry)
+            else:
+                scene = next((s for s in board['scenes'] if s['id'] == target['scene_id']), None)
+                if scene is None:
+                    raise HTTPException(409, 'Shot target was removed')
+                if not any(t.get('generation_job_id') == job_id for t in scene.setdefault('takes', [])):
+                    scene['takes'].append({'path': record['output'], 'generation_job_id': job_id,
+                                           'type': 'video' if record['plan']['media_type'] == 'video' else 'still'})
+            result = commit(project, path, board)
+        await notify(slug, 'storyboard-updated')
+        return {**result, 'job_id': job_id, 'selected_automatically': False}

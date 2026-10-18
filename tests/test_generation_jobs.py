@@ -1,0 +1,228 @@
+"""Exercise paid-call boundaries, interrupted recovery and continuity provenance."""
+import base64
+import copy
+import json
+from pathlib import Path
+from types import SimpleNamespace
+
+import fitz
+import pytest
+import requests
+
+from lib import generation as gen
+from tests.test_workbench import studio, snapshot
+
+
+@pytest.fixture
+def project(tmp_path):
+    pix = fitz.Pixmap(fitz.csRGB, (0, 0, 16, 16), 0); pix.clear_with(140)
+    (tmp_path/'ref.png').write_bytes(pix.tobytes('png'))
+    return tmp_path
+
+
+def board():
+    return {'source_revision': 'verified-kit', 'scenes': [
+        {'id': 1, 'shot_id': 'A01', 'characters': ['NORA'], 'location': 'HOUSE',
+         'reference_versions': {'NORA': 'v001', 'HOUSE': 'v001'}}],
+        'continuity': {'characters': {'NORA': {'name': 'Nora', 'versions': [
+            {'id': 'v001', 'status': 'draft', 'appearance': 'Same person', 'image_paths': []}]}},
+            'locations': {'HOUSE': {'name': 'House', 'versions': [
+                {'id': 'v001', 'status': 'draft', 'image_paths': []}]}}}}
+
+
+def plan(project, **extra):
+    return gen.plan_generation(project, board(), target={'type': 'reference', 'kind': 'characters',
+        'key': 'NORA', 'version': 'v001'}, prompt='Fictional Nora at 40, full-body, neutral daylight',
+        media_type='image', model=gen.IMAGE_MODEL, **extra)
+
+
+def authorized(project, prepared=None):
+    p = prepared or plan(project); gen.prepare_generation(project, p)
+    gen.approve(project, p['job_id'], plan_sha256=p['plan_sha256'],
+                max_cost_usd=p['quote']['estimated_cost_usd'], statement='Human authorized this exact quoted test job')
+    return p
+
+
+class Transport:
+    credential_identity = 'same-issuing-account'
+    def __init__(self, project, responses=None):
+        self.project=project; self.calls=[]; self.downloads=0; self.responses=list(responses or [])
+    def request(self, method, endpoint, **kwargs):
+        self.calls.append((method, endpoint, kwargs))
+        if self.responses:
+            result=self.responses.pop(0)
+            if isinstance(result, Exception):raise result
+            return result
+        data={'request_id': 'provider-job-1'} if method=='POST' else {'status':'done','data':[{'url':'https://imgen.x.ai/private-result?signature=do-not-save'}]}
+        return SimpleNamespace(status_code=200, json=lambda:data)
+    def download(self, url):
+        self.downloads+=1
+        return (self.project/'ref.png').read_bytes()
+
+
+def test_preparing_and_reloading_never_authorizes_or_calls_provider(project, monkeypatch):
+    monkeypatch.setattr(gen, 'XaiTransport', lambda: pytest.fail('credentials/provider consulted before consent'))
+    p=plan(project); first=gen.prepare_generation(project,p); second=gen.prepare_generation(project,p)
+    assert first==second and first['status']=='awaiting_approval'
+    assert p['quote']['estimated_cost_usd']=='0.04'
+    with pytest.raises(ValueError,match='authorization'):
+        gen.run_generation(project,p['job_id'])
+    assert len(list((project/'.generation-jobs').glob('*.json')))==1
+
+
+def test_approval_is_bound_to_exact_cost_and_payload(project):
+    p=plan(project);gen.prepare_generation(project,p)
+    with pytest.raises(ValueError,match='match'):
+        gen.approve(project,p['job_id'],plan_sha256='changed',max_cost_usd='0.04',statement='Human authorization')
+    with pytest.raises(ValueError,match='cover'):
+        gen.approve(project,p['job_id'],plan_sha256=p['plan_sha256'],max_cost_usd='0.01',statement='Human authorization')
+    authorized(project,p)
+    data=json.loads(gen.path_for(project,p['job_id']).read_text());data['approval']['expires_at']='2020-01-01T00:00:00+00:00';gen.atomic(gen.path_for(project,p['job_id']),data)
+    with pytest.raises(ValueError,match='expired'):
+        gen.run_generation(project,p['job_id'])
+
+
+def test_recovery_keeps_remote_id_downloads_and_never_resubmits(project):
+    p=authorized(project);t=Transport(project)
+    sent=gen.run_generation(project,p['job_id'],transport=t)
+    assert sent['status']=='pending' and sent['remote_request_id']=='provider-job-1'
+    # New invocation/process gets the persisted remote ID, not a second POST.
+    result=gen.run_generation(project,p['job_id'],transport=t)
+    assert result['status']=='completed' and (project/result['output']).is_file()
+    before=len(t.calls);gen.run_generation(project,p['job_id'],transport=t)
+    assert len(t.calls)==before and [c[0] for c in t.calls]==['POST','GET']
+    stored=gen.path_for(project,p['job_id']).read_text()
+    assert 'signature=' not in stored and 'data:image/' not in stored
+    assert 'Bearer' not in stored
+    # Missing local result recovers the existing provider job too.
+    (project/result['output']).unlink()
+    assert gen.run_generation(project,p['job_id'],transport=t)['status']=='completed'
+    assert [c[0] for c in t.calls]==['POST','GET','GET']
+
+
+def test_timeout_after_post_never_repeats_paid_effect(project):
+    p=authorized(project);t=Transport(project,[requests.Timeout()])
+    result=gen.run_generation(project,p['job_id'],transport=t)
+    assert result['status']=='submission_unknown'
+    assert gen.run_generation(project,p['job_id'],transport=t)['status']=='submission_unknown'
+    assert len(t.calls)==1
+    with pytest.raises(ValueError,match='already been submitted'):
+        gen.approve(project,p['job_id'],plan_sha256=p['plan_sha256'],max_cost_usd='0.04',statement='Retry this human authorization')
+
+
+def test_saved_submitting_state_is_uncertain_not_live_process(project):
+    p=authorized(project);path=gen.path_for(project,p['job_id']);record=json.loads(path.read_text());record['status']='submitting';gen.atomic(path,record)
+    observed=gen.status(project,p['job_id'])
+    assert observed['status']=='submission_unknown' and observed['active_lock'] is False
+    t=Transport(project);assert gen.run_generation(project,p['job_id'],transport=t)['status']=='submission_unknown'
+    assert t.calls==[]
+
+
+def test_pending_timeout_is_not_terminal_and_next_poll_recovers(project):
+    p=authorized(project);t=Transport(project)
+    gen.run_generation(project,p['job_id'],transport=t)
+    t.responses=[requests.Timeout()]
+    assert gen.run_generation(project,p['job_id'],transport=t)['status']=='pending'
+    assert gen.run_generation(project,p['job_id'],transport=t)['status']=='completed'
+    assert [c[0] for c in t.calls]==['POST','GET','GET']
+
+
+def test_shots_require_actual_pinned_accepted_references_and_preserve_hashes(project):
+    b=board();args=dict(target={'type':'shot','scene_id':1},prompt='A purposeful reaction',media_type='video',model='grok-imagine-video',duration=3)
+    with pytest.raises(ValueError,match='accepted'):
+        gen.plan_generation(project,b,**args)
+    for kind in ['characters','locations']:
+        for item in b['continuity'][kind].values():
+            item['versions'][0].update(status='accepted',image_paths=['ref.png'])
+    p=gen.plan_generation(project,b,**args)
+    assert p['quote']['estimated_cost_usd']=='0.214' and len(p['input_references'])==2
+    endpoint,payload=gen.payload(project,p)
+    assert endpoint=='/videos/generations'
+    assert payload['reference_images'][0]['url'].startswith('data:image/png;base64,')
+    assert 'storage_options' not in payload
+    (project/'ref.png').write_bytes(b'changed')
+    with pytest.raises(ValueError,match='changed'):
+        gen.payload(project,p)
+
+
+def test_age_variants_require_the_established_younger_reference(project):
+    b=board();b['reference_dependencies']={'NORA':['YOUNGER_NORA']}
+    with pytest.raises(ValueError,match='required accepted'):
+        gen.plan_generation(project,b,target={'type':'reference','kind':'characters','key':'NORA','version':'v001'},prompt='Same woman thirteen years later',media_type='image',model=gen.IMAGE_MODEL)
+
+
+def test_reference_must_stay_in_project_and_cross_account_poll_is_refused(project,tmp_path):
+    p=authorized(project);t=Transport(project);gen.run_generation(project,p['job_id'],transport=t)
+    other=Transport(project);other.credential_identity='another-account'
+    with pytest.raises(ValueError,match='issuing'):
+        gen.run_generation(project,p['job_id'],transport=other)
+    assert not other.calls
+
+
+def test_completed_reference_registration_is_idempotent_and_keeps_pins(studio):
+    client,project=studio
+    pix=fitz.Pixmap(fitz.csRGB,(0,0,16,16),0);pix.clear_with(140);(project/'ref.png').write_bytes(pix.tobytes('png'))
+    data=snapshot(client)
+    r=client.post('/api/project/cuarteto/studio/generations/plan',json={'revision':data['revision'],
+        'target':{'type':'reference','kind':'characters','key':'NORA','version':'v001'},
+        'prompt':'Full-body fictional Nora, neutral expression','media_type':'image','model':gen.IMAGE_MODEL})
+    assert r.status_code==200;r=r.json();job_id=r['job_id']
+    assert client.post(f'/api/project/cuarteto/studio/generations/{job_id}/run',json={}).status_code==403
+    assert client.get('/api/project/cuarteto/studio/generations').json()[0]['job_id']==job_id
+    p=authorized(project,r['plan']);t=Transport(project)
+    gen.run_generation(project,job_id,transport=t);gen.run_generation(project,job_id,transport=t)
+    for _ in range(2):
+        data=snapshot(client)
+        response=client.post(f'/api/project/cuarteto/studio/generations/{job_id}/register',json={'revision':data['revision']})
+        assert response.status_code==200
+    data=snapshot(client);versions=data['storyboard']['continuity']['characters']['NORA']['versions']
+    assert len(versions)==2 and versions[-1]['status']=='draft' and versions[-1]['generation_job_id']==job_id
+    assert data['storyboard']['scenes'][0]['reference_versions']['NORA']=='v001'
+    assert len(list((project/'.history').glob('*.json')))>=1
+
+
+def test_withdrawn_unsent_job_has_no_remaining_cost_authority(project):
+    p=authorized(project);gen.withdraw(project,p['job_id']);t=Transport(project)
+    with pytest.raises(ValueError,match='authorization'):
+        gen.run_generation(project,p['job_id'],transport=t)
+    assert not t.calls
+    authorized(project,p);gen.run_generation(project,p['job_id'],transport=t)
+    with pytest.raises(ValueError,match='already submitted'):
+        gen.withdraw(project,p['job_id'])
+
+
+def test_async_api_submission_and_recovery_share_one_provider_job(studio,monkeypatch):
+    import time
+    client,project=studio
+    pix=fitz.Pixmap(fitz.csRGB,(0,0,16,16),0);pix.clear_with(140);(project/'ref.png').write_bytes(pix.tobytes('png'))
+    t=Transport(project);monkeypatch.setattr(gen,'XaiTransport',lambda **_:t)
+    p=plan(project)
+    # Use the API-created fixture target, preserving its own imported identity.
+    with client:
+        s=snapshot(client)
+        prepared=client.post('/api/project/cuarteto/studio/generations/plan',json={'revision':s['revision'],
+            'target':{'type':'reference','kind':'characters','key':'NORA','version':'v001'},
+            'prompt':'A meaningful portrait','media_type':'image','model':gen.IMAGE_MODEL}).json()
+        job_id=prepared['job_id'];endpoint=f'/api/project/cuarteto/studio/generations/{job_id}'
+        assert client.post(endpoint+'/approve',json={'plan_sha256':prepared['plan']['plan_sha256'],'max_cost_usd':'0.04','statement':'Explicit human authorization for the isolated test'}).status_code==200
+        for wanted in ['pending','completed']:
+            assert client.post(endpoint+'/run',json={}).status_code==200
+            deadline=time.monotonic()+3
+            while time.monotonic()<deadline:
+                result=client.get(endpoint).json()
+                if result['status']==wanted:break
+                time.sleep(.01)
+            assert result['status']==wanted
+        assert [c[0] for c in t.calls]==['POST','GET']
+
+
+def test_invalid_provider_download_is_retained_and_recovery_keeps_remote_request(project):
+    p=authorized(project);t=Transport(project);gen.run_generation(project,p['job_id'],transport=t)
+    t.download=lambda _:b'provider-result-that-fails-image-decoding'
+    r=gen.run_generation(project,p['job_id'],transport=t)
+    assert r['status']=='download_failed' and len(r['provider_originals'])==1
+    assert (project/r['provider_originals'][0]['path']).read_bytes()==b'provider-result-that-fails-image-decoding'
+    t.download=lambda _:(project/'ref.png').read_bytes()
+    r=gen.run_generation(project,p['job_id'],transport=t)
+    assert r['status']=='completed' and len(r['provider_originals'])==2
+    assert [c[0] for c in t.calls]==['POST','GET','GET']
