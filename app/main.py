@@ -81,7 +81,7 @@ def load_storyboard(slug: str) -> tuple[Path, dict]:
 
 
 def save_storyboard(sb_path: Path, sb: dict) -> None:
-    sb_path.write_text(json.dumps(sb, indent=2))
+    atomic_json(sb_path, sb)
 
 
 def find_scene(sb: dict, scene_id: int) -> dict:
@@ -164,7 +164,7 @@ async def serve_project_media(slug: str, file_path: str):
     
     # Security: resolve and verify path stays within project dir
     resolved = (proj / file_path).resolve()
-    if not str(resolved).startswith(str(proj.resolve())):
+    if not resolved.is_relative_to(proj.resolve()):
         raise HTTPException(404, "Path escapes project directory")
     if not resolved.is_file():
         raise HTTPException(404, "File not found")
@@ -695,8 +695,15 @@ async def request_scene_video_extend(slug: str, scene_id: int, body: VideoExtend
     return {"ok": True, "scene": scene_id, "path": rel_path, "status": "extended"}
 
 
+class ExportParams(BaseModel):
+    width: int = 1920
+    height: int = 1080
+    crf: int = 23
+    preset: str = "medium"
+
+
 @app.post("/api/project/{slug}/render")
-async def trigger_render(slug: str, body: Optional["ExportParams"] = None):  # ExportParams defined later in file; string fwd ref for annotation eval
+async def trigger_render(slug: str, body: Optional[ExportParams] = None):
     """Trigger assembly. Gates on every scene having at least one 'still'
     asset with a path in its asset_timeline.
     If body with width/height/crf/preset provided (from Export tab), performs
@@ -803,13 +810,6 @@ async def update_scene_timeline(slug: str, scene_id: int, body: dict):
 
 class RenderSceneRequest(BaseModel):
     quality: str = "draft"  # "draft" or "high"
-
-
-class ExportParams(BaseModel):
-    width: int = 1920
-    height: int = 1080
-    crf: int = 23
-    preset: str = "medium"
 
 
 @app.post("/api/project/{slug}/storyboard/{scene_id}/render-scene")
@@ -1246,7 +1246,7 @@ async def add_scene_version(slug: str, scene_id: int, file: UploadFile = File(..
     scenes_dir.mkdir(parents=True, exist_ok=True)
 
     # keep original filename; make unique if collision
-    target_name = file.filename
+    target_name = Path(file.filename).name
     target = scenes_dir / target_name
     if target.exists():
         stem = Path(target_name).stem
@@ -1272,10 +1272,12 @@ async def add_scene_version(slug: str, scene_id: int, file: UploadFile = File(..
         entry["aspect_ratio"] = "16:9"
     if prompt:
         entry["prompt"] = prompt
-    if not isinstance(scene.get("asset_timeline"), list):
-        scene["asset_timeline"] = []
-    scene["asset_timeline"].append(entry)
-
+    if scene.get("shot_id"):
+        scene.setdefault("takes", []).append(dict(entry))
+    else:
+        if not isinstance(scene.get("asset_timeline"), list):
+            scene["asset_timeline"] = []
+        scene["asset_timeline"].append(entry)
     save_storyboard(sb_path, sb)
     await sse_notify(slug, f"{type}-registered:{scene_id}")
     return {"ok": True, "path": rel_path}
@@ -1471,6 +1473,10 @@ class NoCacheStaticFiles(StaticFiles):
         response.headers["Cache-Control"] = "no-cache"
         return response
 
+
+from app.workbench import install_workbench, atomic_json
+
+install_workbench(app, project_dir, sse_notify)
 
 app.mount("/static", NoCacheStaticFiles(directory=str(STATIC)), name="static")
 app.mount("/projects", NoCacheStaticFiles(directory=str(PROJECTS)), name="projects")

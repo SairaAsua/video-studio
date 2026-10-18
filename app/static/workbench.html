@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Video Studio · Mesa de escenas</title>
+<link rel="stylesheet" href="/static/workbench.css">
+<script src="/static/workbench.js" defer></script>
+</head>
+<body>
+<header class="topbar">
+ <a href="/" class="brand">VS<span>VIDEO STUDIO</span></a>
+ <label class="project-label">PROYECTO<select id="project" aria-label="Proyecto"></select></label>
+ <span id="host" class="host"></span>
+ <span id="save-state" role="status">Abriendo proyecto…</span>
+ <a href="/" class="legacy">Editor de capas ↗</a>
+</header>
+<main>
+ <section class="project-heading">
+  <div><p class="eyebrow">MESA DE TRABAJO</p><h1 id="project-title">Historias que toman forma.</h1></div>
+  <div class="film-tabs" aria-label="Video"><button id="film-A" class="active">Video A</button><button id="film-B">Video B</button></div>
+ </section>
+ <p id="notice" role="status" hidden></p>
+ <div class="workspace">
+  <aside class="shot-rail"><div class="rail-heading"><h2>Escenas / tomas</h2><span id="shot-count"></span></div><nav id="shots" aria-label="Tomas del video"></nav></aside>
+  <section class="viewer-column">
+   <div class="viewer-toolbar"><span id="shot-label"></span><div><button id="move-up" title="Mover toma hacia arriba" aria-label="Subir toma">↑</button><button id="move-down" title="Mover toma hacia abajo" aria-label="Bajar toma">↓</button></div></div>
+   <div id="preview" class="preview"></div>
+   <div class="scene-caption"><div><span id="framing-preview" class="eyebrow"></span><h2 id="action-preview"></h2></div><span id="shot-review" class="pill"></span></div>
+   <div class="film-timeline"><div class="rail-heading"><h2>Secuencia del video</h2><span id="edit-summary"></span></div><div id="sequence" aria-label="Secuencia de montaje"></div></div>
+   <details class="direction"><summary>Dirección de montaje de Sai</summary><p id="montage"></p></details>
+  </section>
+  <section class="inspector">
+   <div class="inspector-tabs" role="tablist" aria-label="Mesa de edición"><button data-tab="shot" role="tab" class="active">Toma</button><button data-tab="characters" role="tab">Personajes</button><button data-tab="locations" role="tab">Lugares</button><button data-tab="music" role="tab">Música</button><button data-tab="export" role="tab">Salida</button></div>
+   <div id="panel"></div>
+  </section>
+ </div>
+</main>
+<footer><span>Una acción. Una mirada. Un corte con sentido.</span><span id="reference-summary"></span></footer>
+</body></html>

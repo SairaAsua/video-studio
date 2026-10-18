@@ -139,10 +139,13 @@ def render_scene(scene: dict, paths: dict, quality: str = "draft",
     total_duration = cum if cum > 0 else 5.0
     # Audio-first: scene duration is the audio duration, not the timeline sum.
     # This ensures scenes always match their narration length.
-    if audio_path.exists():
+    if audio_path.exists() and scene.get("audio_mode") != "music":
         audio_dur = _probe_duration(audio_path)
         if audio_dur > 0:
             total_duration = audio_dur
+
+    if scene.get("audio_mode") == "music" and scene.get("edit_duration_secs"):
+        total_duration = float(scene["edit_duration_secs"])
 
     # Input layout (indices):
     # 0: black canvas (lavfi color with explicit d=total)
@@ -175,7 +178,8 @@ def render_scene(scene: dict, paths: dict, quality: str = "draft",
     # Audio filter — mix TTS narration (index 1) with ambient audio from video files at 20%
     video_indices = [first_still_idx + entry["pos"] for entry in asset_list
                      if entry["asset"].get("type") == "video"]
-    audio_filter = _strip_filter_for_audio_check(audio_path, total_duration, video_indices if video_indices else None)
+    audio_filter = (["anullsrc=r=44100:cl=stereo[aud]"] if scene.get("audio_mode") == "music"
+                    else _strip_filter_for_audio_check(audio_path, total_duration, video_indices if video_indices else None))
     audio_filter_str = ",".join(audio_filter)
 
     # Per-asset processing filters -> [l{pos}]
@@ -210,7 +214,7 @@ def render_scene(scene: dict, paths: dict, quality: str = "draft",
                 f"fps=30,"
                 f"scale=w={width}:h={height}:force_original_aspect_ratio=decrease,"
                 f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,"
-                f"trim=duration={vdur},setpts=PTS-STARTPTS+{v_tin}/TB"
+                f"trim=start={float(asset.get('source_in', 0))}:duration={vdur},setpts=PTS-STARTPTS+{v_tin}/TB"
             )
 
         # captions: offset relative times by this asset's scene time_in
@@ -312,7 +316,7 @@ def render_scene(scene: dict, paths: dict, quality: str = "draft",
         print(" ".join(cmd))
         return output_path
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     if result.returncode != 0:
         print(f"--- ffmpeg STDERR for scene {scene_id} ---", file=sys.stderr)
         print(result.stderr[-2000:], file=sys.stderr)
@@ -380,7 +384,7 @@ def concat_scenes(scene_paths: list[Path], output_path: Path,
             "-movflags", "+faststart",  # web-friendly MP4 with metadata at start
             str(output_path),
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
         if result.returncode != 0:
             print(f"--- ffmpeg concat STDERR ---", file=sys.stderr)
             print(result.stderr[-1500:], file=sys.stderr)
@@ -462,7 +466,7 @@ def concat_scenes(scene_paths: list[Path], output_path: Path,
         print(" ".join(cmd))
         return output_path
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     if result.returncode != 0:
         print(f"--- ffmpeg xfade concat STDERR ---", file=sys.stderr)
         print(result.stderr[-2000:], file=sys.stderr)
@@ -495,7 +499,7 @@ def painterly_filter(input_path: Path, output_path: Path,
         "-c:a", "copy",
         str(output_path),
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     if result.returncode != 0:
         print(f"--- ffmpeg painterly STDERR ---", file=sys.stderr)
         print(result.stderr[-1500:], file=sys.stderr)
@@ -587,6 +591,9 @@ def main():
     paths = get_paths(slug)
     sb = json.loads(paths["storyboard"].read_text())
     scenes = sb.get("scenes", [])
+    if sb.get("audio_mode") == "music":
+        for scene in scenes:
+            scene["audio_mode"] = "music"
 
     # Top-level transition (optional); default to fade 0.5s cross-scene xfade
     transition = sb.get("transition")

@@ -43,7 +43,7 @@ def synthesize_edge(text: str, output_path: Path, voice: str = DEFAULT_VOICE, wo
     srt_path = output_path.with_suffix('.srt')
     
     args = ["--voice", voice, "--text", text, "--write-media", str(output_path),
-            "--write-subtitles", str(srt_path), "--words-in-cue", str(words_per_cue)]
+            "--write-subtitles", str(srt_path)]
     
     if edge_bin is None:
         result = subprocess.run([sys.executable, "-m", "edge_tts"] + args,

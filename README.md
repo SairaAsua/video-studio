@@ -1,5 +1,32 @@
 # Video Studio
 
+## Scene workbench fork
+
+This fork's `workbench` branch adds a scene-by-scene production desk to the
+existing app: shot editing, optional timed dialogue, versioned character/location
+references, and music edit decisions. It preserves the original layer editor.
+Project assets and personal configuration remain local and outside Git.
+
+After installing the dependencies below, open an existing project with:
+
+```sh
+.venv/bin/python scripts/open_workbench.py --project PROJECT --body BODY
+```
+
+The helper starts only the existing loopback app when needed and opens
+`/studio?project=PROJECT`. Without a selected body, the request asks which body
+should host the app. A request prepared locally does not establish remote Matrix
+delivery or perform paid generation. See [maintenance and access](docs/MAINTENANCE.md)
+for saved project choices, request recovery and manual upstream updates. Agents
+can use the neutral [video-workbench skill](skills/video-workbench/SKILL.md).
+
+Fork: [SairaAsua/video-studio](https://github.com/SairaAsua/video-studio/tree/workbench).
+Upstream: [nicoechaniz/video-studio](https://github.com/nicoechaniz/video-studio).
+The original upstream documentation follows; its owner-specific runtime, memory,
+wiki and sync instructions describe upstream's installation rather than this fork.
+
+---
+
 FastAPI + vanilla JS dashboard for AI-assisted video production. Audio-first timeline editor with ffmpeg assembly, Grok Imagine b-roll, SRT subtitle tracks, and a proven end-to-end PDF→video pipeline.
 
 > **Active project** · 2026-06-15 · Hermes Agent integration via `kanban-video-orchestrator` and `video-studio-e2e` skill.

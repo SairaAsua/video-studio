@@ -1,8 +1,15 @@
 __pycache__/
 *.pyc
 .venv/
+.env
+.env.*
+!.env.example
 MEMORY.md
 .hermes-tmp/
+
+# Local runtime and manual launcher state
+state/*.log
+state/.manual-launch.lock
 
 # Project output — too large, not version-controlled
 projects/

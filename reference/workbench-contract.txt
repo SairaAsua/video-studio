@@ -1,0 +1,79 @@
+Video Studio workbench — local operating contract
+
+The workbench is part of the existing FastAPI app, not another video service.
+Open /studio?project=PROJECT; the layer editor remains at /.
+The existing projects/<slug>/storyboard.json is authoritative for both editors.
+
+Data
+- scenes retain integer id and supplied shot_id, film and narrative block.
+- source_revision/source_directory identify the received creative kit.
+- edit_duration_secs is unset until a cut is chosen; source duration hints do
+  not become measured musical timecodes.
+- takes preserves source candidates; asset_timeline holds the active selection.
+- included=false keeps a shot as a reserve without deleting it. Coverage can
+  be added under a parent shot; the initial planned shots remain source evidence.
+- continuity.characters/locations contain append-only versions. A visual version
+  cannot be accepted without an actual local image. Shot reference_versions
+  pins each character/location independently; new versions never change pins.
+- soundtracks.A/B are source-relative audio edit decisions. Audio previews are
+  separate cached WAV files; originals are never overwritten or time-stretched.
+- .history retains prior storyboard snapshots. Mutations require the current
+  content revision and return HTTP409 rather than overwrite a newer edit.
+
+Local request entrypoint
+  .venv/bin/python scripts/request_video.py --project PROJECT --body BODY \
+    --purpose 'Prepare the authorized production workbench' \
+    --request-id UUID --start --open
+
+When body is omitted, the command returns needs_body and the selection question.
+When body differs from this host's VIDEO_STUDIO_BODY label (hostname by default),
+it returns needs_routing. It does not contact another host. --start launches
+only the existing start.sh on loopback and --open uses the local browser.
+Reuse the exact UUID and purpose after an ambiguous response. The server keeps
+one request record under the project; a repeated prepared request is reused.
+Changing its purpose or selected body under the same UUID is refused.
+
+POST /api/project/{slug}/studio/requests accepts request_id UUID, optional body
+and purpose. Prepared means that this local project is ready to edit. It never
+means generated, remotely executed, delivered through Matrix or approved.
+The local intake has no Matrix identity/enrollment authority. A maintained
+receiving adapter must verify the human scope and issued capabilities before
+invoking it remotely. No inbox hooks, polling service, credentials or peer
+message sender are installed by this feature.
+
+Music rendering
+Music-mode scene previews ignore narration duration and source-clip audio.
+The selected source_in and edit duration determine the silent picture fragment;
+the soundtrack is assembled separately from measured audio edits. Synthetic
+render tests check actual output duration, selected source frames and unchanged
+source audio. Per-film output/muxing is available through Salida below.
+Image/video generation job management remains work in progress; do not use the
+legacy whole-project export to concatenate A and B into one completed film.
+
+Verification
+  .venv/bin/python -m pytest tests/ --ignore=tests/test_e2e.py -q
+  node --check app/static/workbench.js
+
+The current functional browser receipt and source backup live outside Git in
+the host's local operational evidence. Keep credentials, private state, generated
+media and unrelated memory out of any future shared plugin package.
+
+Per-film exports
+The Salida tab plans a separate A or B export. Every included shot must have an
+actual selected asset and edit duration; measured audio cuts must cover the same
+clock within one output frame. Picture durations use cumulative 30fps boundaries
+so rounding does not accumulate. There is no automatic black padding, music
+speed change or cross-film concatenation. Each content-addressed export keeps
+its cuts, input hashes, reference pins, progress, technical probe and sidecar.
+Interrupted jobs resume cached cuts under a real process file lock; repeated
+requests reuse the same output. A review MP4 is not human approval.
+
+Optional local transcription
+Install requirements-transcription.txt only if the installed environment lacks
+faster-whisper. Supply a complete cached model directory explicitly:
+  .venv/bin/python scripts/analyze_music.py --project projects/PROJECT \
+    --model /path/to/cached/faster-whisper-small
+The script is offline-only and never downloads a model or calls external STT.
+Analysis checkpoints stay inside the ignored project audio-analysis/ directory.
+Sung-word timestamps are machine estimates pending listening; they do not become
+accepted edit decisions or proof that a human listened to the cuts.

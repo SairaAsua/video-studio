@@ -6,6 +6,10 @@ from pathlib import Path
 BASE = "https://api.x.ai/v1"
 
 def _token():
+    """Resolve xAI bearer token. Prefers XAI_API_KEY env var, then falls back
+    to Hermes auth.json xai-oauth tokens."""
+    if os.environ.get("XAI_API_KEY"):
+        return os.environ["XAI_API_KEY"]
     auth_path = Path(os.environ.get('HERMES_HOME', os.path.expanduser('~/.hermes'))) / 'auth.json'
     auth = auth_path.read_text()
     store = json.loads(auth)
